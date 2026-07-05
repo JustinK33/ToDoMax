@@ -1,0 +1,6 @@
+.env
+.env.local
+backend/todomax-server
+*.log
+.DS_Store
+supabase/.temp
