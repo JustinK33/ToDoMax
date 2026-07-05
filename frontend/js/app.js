@@ -52,8 +52,22 @@ function escapeHtml(s) {
   return div.innerHTML;
 }
 
+const EMPTY_MESSAGES = {
+  today: "Nothing due today. Tap + to add one.",
+  week: "Nothing planned this week.",
+  overdue: "Nothing overdue. Nice work!",
+  upcoming: "Nothing coming up yet.",
+  all: "No tasks yet. Tap + to add one.",
+};
+
+function emptyMessage() {
+  if (state.view === "week" && state.weekDay) return "Nothing due on this day.";
+  return EMPTY_MESSAGES[state.view] ?? EMPTY_MESSAGES.all;
+}
+
 function renderTasks(tasks) {
   listEl.innerHTML = "";
+  emptyEl.textContent = emptyMessage();
   emptyEl.classList.toggle("hidden", tasks.length > 0);
 
   for (const t of tasks) {
