@@ -41,9 +41,49 @@ cd backend && go vet ./... && go test ./...
 Runs in CI on every push via `.github/workflows/ci.yml` against a Postgres
 service container.
 
-## Deployment (milestone 10)
+## Deployment
 
-- Frontend: deployed on Vercel with the project's **Root Directory** setting
-  pointed at `frontend/` (no build command needed - it's static files).
-- Backend: containerized (`backend/Dockerfile`) and deployed to Fly.io, which
-  keeps the reminder ticker goroutine alive as a long-running process.
+### Frontend (Vercel)
+
+1. Import the GitHub repo into Vercel.
+2. In the project's Settings, set **Root Directory** to `frontend/`. Leave
+   the build command empty - it's static files, nothing to build.
+3. Update `frontend/js/config.js` with the real (non-local) Supabase project
+   URL, anon key, and the deployed backend's URL before pushing, since
+   there's no build step to inject environment variables at deploy time.
+4. Add the deployed Vercel domain to the backend's `FRONTEND_ORIGINS` env var
+   so CORS allows it.
+
+### Backend (Fly.io)
+
+`backend/Dockerfile` builds a static Go binary on `distroless`; `fly.toml`
+sets `min_machines_running = 1` and `auto_stop_machines = false` - unlike a
+typical stateless API, this one needs to keep running continuously so the
+reminder ticker goroutine doesn't stop between requests.
+
+```bash
+cd backend
+fly launch --no-deploy   # creates/links the Fly app from fly.toml
+fly secrets set \
+  DATABASE_URL=... \
+  SUPABASE_URL=... \
+  FRONTEND_ORIGINS=https://your-app.vercel.app \
+  RESEND_API_KEY=... \
+  REMINDER_FROM_EMAIL=... \
+  REMINDER_TO_EMAIL=... \
+  TZ=America/Los_Angeles
+fly deploy
+```
+
+Verified locally by building the image and running it against the local
+Supabase stack's Docker network before trusting it in CI/production.
+
+### Database (Supabase)
+
+Point the Supabase CLI at the real project and push the migrations already
+in `supabase/migrations/`:
+
+```bash
+supabase link --project-ref <your-project-ref>
+supabase db push
+```
