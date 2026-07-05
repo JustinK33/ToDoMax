@@ -33,10 +33,20 @@ const HABIT_PRESETS = [
   { title: "Sleep routine", category: "Health", recurrence_type: "daily" },
 ];
 
+// Matches a category against the preset list case-insensitively, so legacy
+// or hand-typed casing (e.g. "health") still groups/colors with "Health"
+// instead of silently becoming a distinct uncolored "custom" category.
+function canonicalCategory(cat) {
+  const trimmed = cat?.trim();
+  if (!trimmed) return null;
+  return PRESET_CATEGORIES.find((p) => p.toLowerCase() === trimmed.toLowerCase()) ?? trimmed;
+}
+
 function setCategoryValue(cat) {
-  const match = cat && PRESET_CATEGORIES.find((p) => p.toLowerCase() === cat.toLowerCase());
-  categoryInput.value = match || (cat ? "__other" : "");
-  categoryOther.value = match ? "" : cat ?? "";
+  const canonical = canonicalCategory(cat);
+  const match = canonical && PRESET_CATEGORIES.includes(canonical);
+  categoryInput.value = match ? canonical : canonical ? "__other" : "";
+  categoryOther.value = match ? "" : canonical ?? "";
   categoryOther.classList.toggle("hidden", categoryInput.value !== "__other");
 }
 
@@ -51,6 +61,7 @@ categoryInput.addEventListener("change", () => {
 });
 
 let editingId = null;
+let editingRecurrenceType = "none";
 let currentTasks = [];
 const state = { view: "today", category: "", weekDay: null };
 
@@ -113,7 +124,7 @@ function taskRow(t, { showCategory }) {
   const due = [t.due_date, t.due_time?.slice(0, 5)].filter(Boolean).join(" ");
   const recurLabel = t.recurrence_type === "daily" ? "daily" : t.recurrence_type === "weekly" ? "weekly" : "";
   const reminder = reminderLabel(t.reminder_minutes_before);
-  const metaParts = [due, showCategory ? t.category : null, recurLabel, reminder].filter(Boolean);
+  const metaParts = [due, showCategory ? canonicalCategory(t.category) : null, recurLabel, reminder].filter(Boolean);
   li.innerHTML = `
     <input type="checkbox" ${t.completed ? "checked" : ""} data-id="${t.id}" data-date="${t.due_date ?? ""}" class="toggle" />
     <div class="body" data-id="${t.id}">
@@ -130,11 +141,13 @@ function renderTasks(tasks) {
   emptyEl.classList.toggle("hidden", tasks.length > 0);
   if (tasks.length === 0) return;
 
+  // Keyed by canonical category or null (uncategorized) - kept distinct from
+  // any literal "Other" a user might type into the custom-category field.
   const groups = new Map();
   for (const t of tasks) {
-    const label = t.category || "Other";
-    if (!groups.has(label)) groups.set(label, []);
-    groups.get(label).push(t);
+    const key = canonicalCategory(t.category);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(t);
   }
 
   if (groups.size <= 1) {
@@ -142,14 +155,18 @@ function renderTasks(tasks) {
     return;
   }
 
-  const labels = [...groups.keys()].sort((a, b) => {
-    const ia = CATEGORY_ORDER.indexOf(a);
-    const ib = CATEGORY_ORDER.indexOf(b);
+  const keys = [...groups.keys()].sort((a, b) => {
+    const labelA = a ?? "Other";
+    const labelB = b ?? "Other";
+    const ia = CATEGORY_ORDER.indexOf(labelA);
+    const ib = CATEGORY_ORDER.indexOf(labelB);
+    if (ia === -1 && ib === -1) return labelA.localeCompare(labelB);
     return (ia === -1 ? CATEGORY_ORDER.length : ia) - (ib === -1 ? CATEGORY_ORDER.length : ib);
   });
 
-  for (const label of labels) {
-    const groupTasks = groups.get(label);
+  for (const key of keys) {
+    const label = key ?? "Other";
+    const groupTasks = groups.get(key);
     const done = groupTasks.filter((t) => t.completed).length;
     const group = document.createElement("li");
     group.className = "task-group";
@@ -226,12 +243,16 @@ async function refreshHero() {
   heroStatsEl.innerHTML = `<span>${done}/${today.length} done today</span>${overduePill}`;
 }
 
-heroStatsEl.addEventListener("click", (e) => {
+heroStatsEl.addEventListener("click", async (e) => {
   if (e.target.id !== "hero-overdue") return;
   state.view = "overdue";
   state.weekDay = null;
   for (const b of viewTabs.querySelectorAll("button")) b.classList.toggle("active", b.dataset.view === "overdue");
-  loadTasks();
+  try {
+    await loadTasks();
+  } catch (err) {
+    reportError(err, "loading");
+  }
 });
 
 async function refreshCategories() {
@@ -273,13 +294,21 @@ viewTabs.addEventListener("click", async (e) => {
   for (const b of viewTabs.querySelectorAll("button")) {
     b.classList.toggle("active", b === btn);
   }
-  await loadTasks();
-  await refreshWeekSummary();
+  try {
+    await loadTasks();
+    await refreshWeekSummary();
+  } catch (err) {
+    reportError(err, "loading");
+  }
 });
 
 categorySelect.addEventListener("change", async () => {
   state.category = categorySelect.value;
-  await loadTasks();
+  try {
+    await loadTasks();
+  } catch (err) {
+    reportError(err, "loading");
+  }
 });
 
 function setSelectedDays(days) {
@@ -340,6 +369,7 @@ reminderPreset.addEventListener("change", () => {
 
 function openModal(task) {
   editingId = task?.id ?? null;
+  editingRecurrenceType = task?.recurrence_type ?? "none";
   modalTitle.textContent = editingId ? "Edit task" : "New task";
   form.title.value = task?.title ?? "";
   form.notes.value = task?.notes ?? "";
@@ -391,9 +421,19 @@ modalBackdrop.addEventListener("click", (e) => {
   if (e.target === modalBackdrop) closeModal();
 });
 
-function reportError(err) {
+function reportError(err, action = "saving") {
   console.error(err);
-  alert("Something went wrong saving that. Check your connection and try again.");
+  alert(`Something went wrong ${action} that. Check your connection and try again.`);
+}
+
+// Re-fetches everything a mutation could have changed. Deliberately one
+// helper shared by every mutating handler so a future edit can't add a
+// refresh call without also getting it covered by that handler's try/catch.
+async function refreshView({ categories = false } = {}) {
+  await loadTasks();
+  if (categories) await refreshCategories();
+  await refreshWeekSummary();
+  await refreshHero();
 }
 
 listEl.addEventListener("click", async (e) => {
@@ -404,12 +444,10 @@ listEl.addEventListener("click", async (e) => {
     const body = checkbox.dataset.date ? JSON.stringify({ occurrence_date: checkbox.dataset.date }) : undefined;
     try {
       await apiFetch(`/api/tasks/${id}/${action}`, { method: "POST", body });
-      await loadTasks();
-      await refreshWeekSummary();
-      await refreshHero();
+      await refreshView();
     } catch (err) {
       checkbox.checked = !checkbox.checked;
-      reportError(err);
+      reportError(err, "updating");
     }
     return;
   }
@@ -434,6 +472,10 @@ form.addEventListener("submit", async (e) => {
     reminder_minutes_before: getReminderMinutes(),
   };
   if (!payload.title) return;
+  if (categoryInput.value === "__other" && !categoryOther.value.trim()) {
+    alert('Enter a category name, or choose "No category" instead.');
+    return;
+  }
   if (payload.recurrence_type === "weekly" && payload.recurrence_days.length === 0) {
     alert("Pick at least one day for a weekly repeat.");
     return;
@@ -449,15 +491,11 @@ form.addEventListener("submit", async (e) => {
     } else {
       await apiFetch("/api/tasks", { method: "POST", body: JSON.stringify(payload) });
     }
+    closeModal();
+    await refreshView({ categories: true });
   } catch (err) {
     reportError(err);
-    return;
   }
-  closeModal();
-  await loadTasks();
-  await refreshCategories();
-  await refreshWeekSummary();
-  await refreshHero();
 });
 
 function resetDeleteConfirm() {
@@ -469,24 +507,23 @@ deleteBtn.addEventListener("click", async () => {
   if (!editingId) return;
   if (!deleteBtn.classList.contains("confirm")) {
     deleteBtn.textContent =
-      recurrenceType.value === "none" ? "Tap again to delete" : "Tap again to delete all occurrences";
+      editingRecurrenceType === "none" ? "Tap again to delete" : "Tap again to delete all occurrences";
     deleteBtn.classList.add("confirm");
     return;
   }
   try {
     await apiFetch(`/api/tasks/${editingId}`, { method: "DELETE" });
+    closeModal();
+    await refreshView({ categories: true });
   } catch (err) {
-    reportError(err);
-    return;
+    reportError(err, "deleting");
   }
-  closeModal();
-  await loadTasks();
-  await refreshCategories();
-  await refreshWeekSummary();
-  await refreshHero();
 });
 
-await loadTasks();
-await refreshCategories();
-await refreshWeekSummary();
-await refreshHero();
+try {
+  await refreshView({ categories: true });
+} catch (err) {
+  console.error(err);
+  emptyEl.textContent = "Couldn't load your tasks. Check your connection and reload the page.";
+  emptyEl.classList.remove("hidden");
+}
