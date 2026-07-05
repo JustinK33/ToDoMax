@@ -12,17 +12,19 @@ import (
 	"github.com/justin/todomax/backend/internal/auth"
 	"github.com/justin/todomax/backend/internal/config"
 	"github.com/justin/todomax/backend/internal/goal"
+	"github.com/justin/todomax/backend/internal/nutrition"
 	"github.com/justin/todomax/backend/internal/reminder"
 	"github.com/justin/todomax/backend/internal/task"
 )
 
 type Server struct {
-	cfg      config.Config
-	db       *pgxpool.Pool
-	authKeys keyfunc.Keyfunc
-	tasks    *task.Store
-	goals    *goal.Store
-	stop     context.CancelFunc
+	cfg       config.Config
+	db        *pgxpool.Pool
+	authKeys  keyfunc.Keyfunc
+	tasks     *task.Store
+	goals     *goal.Store
+	nutrition *nutrition.Store
+	stop      context.CancelFunc
 }
 
 func New() (*Server, error) {
@@ -46,6 +48,7 @@ func New() (*Server, error) {
 
 	tasks := task.NewStore(db)
 	goals := goal.NewStore(db)
+	nutritionStore := nutrition.NewStore(db)
 
 	if db != nil {
 		reminderRunner := reminder.New(tasks, reminder.Config{
@@ -56,7 +59,7 @@ func New() (*Server, error) {
 		go reminderRunner.Run(ctx)
 	}
 
-	return &Server{cfg: cfg, db: db, authKeys: authKeys, tasks: tasks, goals: goals, stop: cancel}, nil
+	return &Server{cfg: cfg, db: db, authKeys: authKeys, tasks: tasks, goals: goals, nutrition: nutritionStore, stop: cancel}, nil
 }
 
 func (s *Server) Close() {
@@ -88,6 +91,24 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("DELETE /api/goals/{id}", requireAuth(http.HandlerFunc(s.handleDeleteGoal)))
 	mux.Handle("POST /api/goals/{id}/complete", requireAuth(http.HandlerFunc(s.handleCompleteGoal)))
 	mux.Handle("POST /api/goals/{id}/uncomplete", requireAuth(http.HandlerFunc(s.handleUncompleteGoal)))
+
+	mux.Handle("POST /api/foods", requireAuth(http.HandlerFunc(s.handleCreateFood)))
+	mux.Handle("GET /api/foods", requireAuth(http.HandlerFunc(s.handleListFoods)))
+	mux.Handle("GET /api/foods/{id}", requireAuth(http.HandlerFunc(s.handleGetFood)))
+	mux.Handle("PUT /api/foods/{id}", requireAuth(http.HandlerFunc(s.handleUpdateFood)))
+	mux.Handle("DELETE /api/foods/{id}", requireAuth(http.HandlerFunc(s.handleDeleteFood)))
+
+	mux.Handle("POST /api/meals", requireAuth(http.HandlerFunc(s.handleCreateMeal)))
+	mux.Handle("GET /api/meals", requireAuth(http.HandlerFunc(s.handleListMeals)))
+	mux.Handle("GET /api/meals/{id}", requireAuth(http.HandlerFunc(s.handleGetMeal)))
+	mux.Handle("PUT /api/meals/{id}", requireAuth(http.HandlerFunc(s.handleUpdateMeal)))
+	mux.Handle("DELETE /api/meals/{id}", requireAuth(http.HandlerFunc(s.handleDeleteMeal)))
+
+	mux.Handle("POST /api/nutrition/log", requireAuth(http.HandlerFunc(s.handleCreateLogEntry)))
+	mux.Handle("DELETE /api/nutrition/log/{id}", requireAuth(http.HandlerFunc(s.handleDeleteLogEntry)))
+	mux.Handle("GET /api/nutrition/day", requireAuth(http.HandlerFunc(s.handleDaySummary)))
+	mux.Handle("GET /api/nutrition/target", requireAuth(http.HandlerFunc(s.handleGetTarget)))
+	mux.Handle("PUT /api/nutrition/target", requireAuth(http.HandlerFunc(s.handleSetTarget)))
 
 	return s.cors(mux)
 }
