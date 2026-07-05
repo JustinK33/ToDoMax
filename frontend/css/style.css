@@ -77,6 +77,19 @@ button:hover {
   background: var(--surface);
 }
 
+.category-filter {
+  padding: 0.5rem 1rem 0;
+}
+
+.category-filter select {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+}
+
 nav.tabs {
   display: flex;
   gap: 0.25rem;

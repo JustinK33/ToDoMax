@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -56,7 +57,13 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 	userID, _ := auth.UserID(r.Context())
 
-	tasks, err := s.tasks.List(r.Context(), userID)
+	filter := task.Filter{
+		View:     r.URL.Query().Get("view"),
+		Category: r.URL.Query().Get("category"),
+		Now:      time.Now().In(s.cfg.Location),
+	}
+
+	tasks, err := s.tasks.List(r.Context(), userID, filter)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

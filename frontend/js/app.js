@@ -6,8 +6,12 @@ const modalBackdrop = document.getElementById("modal-backdrop");
 const form = document.getElementById("task-form");
 const deleteBtn = document.getElementById("delete-task");
 const modalTitle = document.getElementById("modal-title");
+const viewTabs = document.getElementById("view-tabs");
+const categorySelect = document.getElementById("category-select");
 
 let editingId = null;
+let currentTasks = [];
+const state = { view: "today", category: "" };
 
 function escapeHtml(s) {
   const div = document.createElement("div");
@@ -36,9 +40,40 @@ function renderTasks(tasks) {
 }
 
 async function loadTasks() {
-  const tasks = await apiFetch("/api/tasks");
-  renderTasks(tasks);
+  const params = new URLSearchParams({ view: state.view });
+  if (state.category) params.set("category", state.category);
+  currentTasks = await apiFetch(`/api/tasks?${params}`);
+  renderTasks(currentTasks);
 }
+
+async function refreshCategories() {
+  const all = await apiFetch("/api/tasks?view=all");
+  const categories = [...new Set(all.map((t) => t.category).filter(Boolean))].sort();
+  const selected = categorySelect.value;
+  categorySelect.innerHTML = '<option value="">All categories</option>';
+  for (const c of categories) {
+    const opt = document.createElement("option");
+    opt.value = c;
+    opt.textContent = c;
+    categorySelect.appendChild(opt);
+  }
+  categorySelect.value = categories.includes(selected) ? selected : "";
+}
+
+viewTabs.addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-view]");
+  if (!btn) return;
+  state.view = btn.dataset.view;
+  for (const b of viewTabs.querySelectorAll("button")) {
+    b.classList.toggle("active", b === btn);
+  }
+  await loadTasks();
+});
+
+categorySelect.addEventListener("change", async () => {
+  state.category = categorySelect.value;
+  await loadTasks();
+});
 
 function openModal(task) {
   editingId = task?.id ?? null;
@@ -76,8 +111,7 @@ listEl.addEventListener("click", async (e) => {
 
   const body = e.target.closest(".body");
   if (body) {
-    const tasks = await apiFetch("/api/tasks");
-    const task = tasks.find((t) => t.id === body.dataset.id);
+    const task = currentTasks.find((t) => t.id === body.dataset.id);
     if (task) openModal(task);
   }
 });
@@ -100,6 +134,7 @@ form.addEventListener("submit", async (e) => {
   }
   closeModal();
   await loadTasks();
+  await refreshCategories();
 });
 
 deleteBtn.addEventListener("click", async () => {
@@ -107,6 +142,8 @@ deleteBtn.addEventListener("click", async () => {
   await apiFetch(`/api/tasks/${editingId}`, { method: "DELETE" });
   closeModal();
   await loadTasks();
+  await refreshCategories();
 });
 
 await loadTasks();
+await refreshCategories();

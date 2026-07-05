@@ -19,6 +19,18 @@
       </div>
       <button id="logout">Log out</button>
     </header>
+    <nav class="tabs" id="view-tabs">
+      <button data-view="today" class="active">Today</button>
+      <button data-view="week">Week</button>
+      <button data-view="overdue">Overdue</button>
+      <button data-view="upcoming">Upcoming</button>
+      <button data-view="all">All</button>
+    </nav>
+    <div class="category-filter">
+      <select id="category-select">
+        <option value="">All categories</option>
+      </select>
+    </div>
     <main>
       <p id="empty-state" class="empty-state hidden">No tasks yet. Tap + to add one.</p>
       <ul id="task-list" class="task-list"></ul>

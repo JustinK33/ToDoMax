@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -10,6 +11,7 @@ type Config struct {
 	SupabaseURL     string
 	Port            string
 	FrontendOrigins []string
+	Location        *time.Location
 }
 
 func Load() Config {
@@ -20,10 +22,16 @@ func Load() Config {
 		}
 	}
 
+	loc, err := time.LoadLocation(os.Getenv("TZ"))
+	if err != nil {
+		loc = time.UTC
+	}
+
 	return Config{
 		DatabaseURL:     os.Getenv("DATABASE_URL"),
 		SupabaseURL:     os.Getenv("SUPABASE_URL"),
 		Port:            os.Getenv("PORT"),
 		FrontendOrigins: origins,
+		Location:        loc,
 	}
 }

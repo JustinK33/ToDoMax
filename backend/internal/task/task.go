@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -122,14 +123,51 @@ func (s *Store) Create(ctx context.Context, userID string, in Input) (Task, erro
 	return scanTask(row)
 }
 
-func (s *Store) List(ctx context.Context, userID string) ([]Task, error) {
-	rows, err := s.db.Query(ctx, `
-		select `+taskColumns+`
-		from tasks
-		where user_id = $1
-		order by due_date nulls last, due_time nulls last, created_at`,
-		userID,
-	)
+// Filter selects which tasks List returns. View is one of
+// "today"/"week"/"overdue"/"upcoming"/"all" (default "all" for zero value).
+// Now must be the caller's current time in the user's configured timezone,
+// so "today"/"week" boundaries land on the right calendar day.
+type Filter struct {
+	View     string
+	Category string
+	Now      time.Time
+}
+
+func mondayOf(t time.Time) time.Time {
+	offset := (int(t.Weekday()) + 6) % 7 // days since Monday (Sunday=0 -> 6)
+	return t.AddDate(0, 0, -offset)
+}
+
+func (s *Store) List(ctx context.Context, userID string, f Filter) ([]Task, error) {
+	conditions := []string{"user_id = $1"}
+	args := []interface{}{userID}
+	arg := func(v interface{}) string {
+		args = append(args, v)
+		return fmt.Sprintf("$%d", len(args))
+	}
+
+	today := f.Now.Format("2006-01-02")
+	switch f.View {
+	case "today":
+		conditions = append(conditions, "due_date = "+arg(today))
+	case "week":
+		monday := mondayOf(f.Now).Format("2006-01-02")
+		sunday := mondayOf(f.Now).AddDate(0, 0, 6).Format("2006-01-02")
+		conditions = append(conditions, "due_date between "+arg(monday)+" and "+arg(sunday))
+	case "overdue":
+		conditions = append(conditions, "due_date < "+arg(today)+" and completed = false")
+	case "upcoming":
+		conditions = append(conditions, "due_date > "+arg(today))
+	}
+
+	if f.Category != "" {
+		conditions = append(conditions, "category = "+arg(f.Category))
+	}
+
+	query := `select ` + taskColumns + ` from tasks where ` + strings.Join(conditions, " and ") +
+		` order by due_date nulls last, due_time nulls last, created_at`
+
+	rows, err := s.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
