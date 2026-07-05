@@ -125,6 +125,49 @@ main {
   gap: 0.5rem;
 }
 
+.task-group {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--cat-color, var(--accent));
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+}
+
+.task-group-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+
+.task-group-header .cat-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--cat-color, var(--accent));
+}
+
+.task-group-header .cat-count {
+  margin-left: auto;
+  font-weight: 400;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.task-group-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.task-group .task {
+  background: var(--surface-2);
+}
+
 .task {
   background: var(--surface);
   border: 1px solid var(--border);

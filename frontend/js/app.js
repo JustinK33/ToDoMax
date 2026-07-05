@@ -93,27 +93,75 @@ function reminderLabel(mins) {
   return `⏰ ${mins}m before`;
 }
 
+const CATEGORY_COLORS = {
+  Health: "#4caf7d",
+  Study: "#5b8def",
+  Fitness: "#ef8354",
+  Personal: "#b784e0",
+  Work: "#e0c341",
+};
+const CATEGORY_ORDER = ["Health", "Study", "Fitness", "Personal", "Work", "Other"];
+
+function categoryColor(label) {
+  return CATEGORY_COLORS[label] ?? "var(--text-dim)";
+}
+
+function taskRow(t, { showCategory }) {
+  const li = document.createElement("li");
+  li.className = "task" + (t.completed ? " done" : "");
+
+  const due = [t.due_date, t.due_time?.slice(0, 5)].filter(Boolean).join(" ");
+  const recurLabel = t.recurrence_type === "daily" ? "daily" : t.recurrence_type === "weekly" ? "weekly" : "";
+  const reminder = reminderLabel(t.reminder_minutes_before);
+  const metaParts = [due, showCategory ? t.category : null, recurLabel, reminder].filter(Boolean);
+  li.innerHTML = `
+    <input type="checkbox" ${t.completed ? "checked" : ""} data-id="${t.id}" data-date="${t.due_date ?? ""}" class="toggle" />
+    <div class="body" data-id="${t.id}">
+      <div class="title">${escapeHtml(t.title)}</div>
+      ${metaParts.length ? `<div class="meta">${metaParts.map(escapeHtml).join(" · ")}</div>` : ""}
+    </div>
+  `;
+  return li;
+}
+
 function renderTasks(tasks) {
   listEl.innerHTML = "";
   emptyEl.textContent = emptyMessage();
   emptyEl.classList.toggle("hidden", tasks.length > 0);
+  if (tasks.length === 0) return;
 
+  const groups = new Map();
   for (const t of tasks) {
-    const li = document.createElement("li");
-    li.className = "task" + (t.completed ? " done" : "");
+    const label = t.category || "Other";
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label).push(t);
+  }
 
-    const due = [t.due_date, t.due_time?.slice(0, 5)].filter(Boolean).join(" ");
-    const recurLabel = t.recurrence_type === "daily" ? "daily" : t.recurrence_type === "weekly" ? "weekly" : "";
-    const reminder = reminderLabel(t.reminder_minutes_before);
-    const metaParts = [due, t.category, recurLabel, reminder].filter(Boolean);
-    li.innerHTML = `
-      <input type="checkbox" ${t.completed ? "checked" : ""} data-id="${t.id}" data-date="${t.due_date ?? ""}" class="toggle" />
-      <div class="body" data-id="${t.id}">
-        <div class="title">${escapeHtml(t.title)}</div>
-        ${metaParts.length ? `<div class="meta">${metaParts.map(escapeHtml).join(" · ")}</div>` : ""}
-      </div>
-    `;
-    listEl.appendChild(li);
+  if (groups.size <= 1) {
+    for (const t of tasks) listEl.appendChild(taskRow(t, { showCategory: true }));
+    return;
+  }
+
+  const labels = [...groups.keys()].sort((a, b) => {
+    const ia = CATEGORY_ORDER.indexOf(a);
+    const ib = CATEGORY_ORDER.indexOf(b);
+    return (ia === -1 ? CATEGORY_ORDER.length : ia) - (ib === -1 ? CATEGORY_ORDER.length : ib);
+  });
+
+  for (const label of labels) {
+    const groupTasks = groups.get(label);
+    const done = groupTasks.filter((t) => t.completed).length;
+    const group = document.createElement("li");
+    group.className = "task-group";
+    group.style.setProperty("--cat-color", categoryColor(label));
+    const header = document.createElement("div");
+    header.className = "task-group-header";
+    header.innerHTML = `<span class="cat-dot"></span><span class="cat-name">${escapeHtml(label)}</span><span class="cat-count">${done}/${groupTasks.length}</span>`;
+    const sublist = document.createElement("ul");
+    sublist.className = "task-group-list";
+    for (const t of groupTasks) sublist.appendChild(taskRow(t, { showCategory: false }));
+    group.append(header, sublist);
+    listEl.appendChild(group);
   }
 }
 
