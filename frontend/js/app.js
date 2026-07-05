@@ -303,6 +303,7 @@ function openModal(task) {
   updateRecurrenceDaysVisibility();
   setReminderMinutes(task?.reminder_minutes_before ?? null);
   deleteBtn.classList.toggle("hidden", !editingId);
+  resetDeleteConfirm();
 
   habitPresetsEl.classList.toggle("hidden", !!editingId);
   if (!editingId && habitPresetsEl.childElementCount === 0) {
@@ -322,6 +323,7 @@ function closeModal() {
   updateRecurrenceDaysVisibility();
   setReminderMinutes(null);
   setCategoryValue(null);
+  resetDeleteConfirm();
 }
 
 habitPresetsEl.addEventListener("click", (e) => {
@@ -410,8 +412,18 @@ form.addEventListener("submit", async (e) => {
   await refreshHero();
 });
 
+function resetDeleteConfirm() {
+  deleteBtn.textContent = "Delete";
+  deleteBtn.classList.remove("confirm");
+}
+
 deleteBtn.addEventListener("click", async () => {
   if (!editingId) return;
+  if (!deleteBtn.classList.contains("confirm")) {
+    deleteBtn.textContent = "Tap again to delete";
+    deleteBtn.classList.add("confirm");
+    return;
+  }
   try {
     await apiFetch(`/api/tasks/${editingId}`, { method: "DELETE" });
   } catch (err) {

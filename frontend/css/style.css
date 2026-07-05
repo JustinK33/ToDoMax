@@ -232,6 +232,12 @@ main {
   margin-top: 0.5rem;
 }
 
+#delete-task.confirm {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #0b0b0d;
+}
+
 .weekday-picker {
   display: flex;
   flex-wrap: wrap;
