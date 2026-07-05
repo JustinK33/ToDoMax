@@ -341,16 +341,26 @@ modalBackdrop.addEventListener("click", (e) => {
   if (e.target === modalBackdrop) closeModal();
 });
 
+function reportError(err) {
+  console.error(err);
+  alert("Something went wrong saving that. Check your connection and try again.");
+}
+
 listEl.addEventListener("click", async (e) => {
   const checkbox = e.target.closest(".toggle");
   if (checkbox) {
     const id = checkbox.dataset.id;
     const action = checkbox.checked ? "complete" : "uncomplete";
     const body = checkbox.dataset.date ? JSON.stringify({ occurrence_date: checkbox.dataset.date }) : undefined;
-    await apiFetch(`/api/tasks/${id}/${action}`, { method: "POST", body });
-    await loadTasks();
-    await refreshWeekSummary();
-    await refreshHero();
+    try {
+      await apiFetch(`/api/tasks/${id}/${action}`, { method: "POST", body });
+      await loadTasks();
+      await refreshWeekSummary();
+      await refreshHero();
+    } catch (err) {
+      checkbox.checked = !checkbox.checked;
+      reportError(err);
+    }
     return;
   }
 
@@ -383,10 +393,15 @@ form.addEventListener("submit", async (e) => {
     return;
   }
 
-  if (editingId) {
-    await apiFetch(`/api/tasks/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
-  } else {
-    await apiFetch("/api/tasks", { method: "POST", body: JSON.stringify(payload) });
+  try {
+    if (editingId) {
+      await apiFetch(`/api/tasks/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
+    } else {
+      await apiFetch("/api/tasks", { method: "POST", body: JSON.stringify(payload) });
+    }
+  } catch (err) {
+    reportError(err);
+    return;
   }
   closeModal();
   await loadTasks();
@@ -397,7 +412,12 @@ form.addEventListener("submit", async (e) => {
 
 deleteBtn.addEventListener("click", async () => {
   if (!editingId) return;
-  await apiFetch(`/api/tasks/${editingId}`, { method: "DELETE" });
+  try {
+    await apiFetch(`/api/tasks/${editingId}`, { method: "DELETE" });
+  } catch (err) {
+    reportError(err);
+    return;
+  }
   closeModal();
   await loadTasks();
   await refreshCategories();
