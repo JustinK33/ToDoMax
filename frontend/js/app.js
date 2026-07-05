@@ -468,7 +468,8 @@ function resetDeleteConfirm() {
 deleteBtn.addEventListener("click", async () => {
   if (!editingId) return;
   if (!deleteBtn.classList.contains("confirm")) {
-    deleteBtn.textContent = "Tap again to delete";
+    deleteBtn.textContent =
+      recurrenceType.value === "none" ? "Tap again to delete" : "Tap again to delete all occurrences";
     deleteBtn.classList.add("confirm");
     return;
   }
