@@ -31,6 +31,7 @@
         <option value="">All categories</option>
       </select>
     </div>
+    <div id="week-summary" class="week-summary hidden"></div>
     <main>
       <p id="empty-state" class="empty-state hidden">No tasks yet. Tap + to add one.</p>
       <ul id="task-list" class="task-list"></ul>
@@ -41,6 +42,7 @@
   <div id="modal-backdrop" class="modal-backdrop hidden">
     <form id="task-form" class="modal">
       <h2 id="modal-title">New task</h2>
+      <div id="habit-presets" class="habit-presets"></div>
       <label>Title
         <input name="title" required maxlength="200" />
       </label>

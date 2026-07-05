@@ -426,3 +426,81 @@ func TestDueReminders(t *testing.T) {
 		}
 	})
 }
+
+func TestWeekSummary(t *testing.T) {
+	store, userID := newTestStore(t)
+	ctx := context.Background()
+
+	now := time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)
+	for now.Weekday() != time.Wednesday {
+		now = now.AddDate(0, 0, 1)
+	}
+	todayStr := now.Format("2006-01-02")
+
+	healthCat := "health"
+	workCat := "work"
+
+	// Daily habit in "health": expected every day this week (7), complete today only.
+	daily, err := store.Create(ctx, userID, Input{Title: "drink water", RecurrenceType: "daily", Category: &healthCat})
+	if err != nil {
+		t.Fatalf("Create daily failed: %v", err)
+	}
+	if _, err := store.SetOccurrenceCompleted(ctx, userID, daily.ID, todayStr, true); err != nil {
+		t.Fatalf("SetOccurrenceCompleted failed: %v", err)
+	}
+
+	// One-off task due today in "work", left incomplete.
+	if _, err := store.Create(ctx, userID, Input{Title: "send report", DueDate: &todayStr, Category: &workCat}); err != nil {
+		t.Fatalf("Create one-off failed: %v", err)
+	}
+
+	summary, err := store.WeekSummary(ctx, userID, now)
+	if err != nil {
+		t.Fatalf("WeekSummary failed: %v", err)
+	}
+
+	if summary.Expected != 8 { // 7 daily occurrences + 1 one-off
+		t.Fatalf("expected 8 total occurrences this week, got %d (%+v)", summary.Expected, summary)
+	}
+	if summary.Completed != 1 {
+		t.Fatalf("expected 1 completed occurrence, got %d (%+v)", summary.Completed, summary)
+	}
+
+	var health, work *CategoryProgress
+	for i := range summary.ByCategory {
+		switch summary.ByCategory[i].Category {
+		case "health":
+			health = &summary.ByCategory[i]
+		case "work":
+			work = &summary.ByCategory[i]
+		}
+	}
+	if health == nil || health.Expected != 7 || health.Completed != 1 {
+		t.Fatalf("expected health: 7 expected/1 completed, got %+v", health)
+	}
+	if work == nil || work.Expected != 1 || work.Completed != 0 {
+		t.Fatalf("expected work: 1 expected/0 completed, got %+v", work)
+	}
+}
+
+// TestWeekSummaryEmptyByCategoryIsNotNil guards against a real bug: a nil Go
+// slice marshals to JSON `null`, and the frontend calls .map() on
+// by_category unconditionally - `null.map()` throws, which aborted the
+// summary render silently (the DOM update line never ran) before this was
+// fixed to always initialize ByCategory to an empty slice.
+func TestWeekSummaryEmptyByCategoryIsNotNil(t *testing.T) {
+	store, userID := newTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)
+
+	summary, err := store.WeekSummary(ctx, userID, now)
+	if err != nil {
+		t.Fatalf("WeekSummary failed: %v", err)
+	}
+	if summary.ByCategory == nil {
+		t.Fatalf("expected ByCategory to be an empty slice, not nil")
+	}
+	if len(summary.ByCategory) != 0 {
+		t.Fatalf("expected no categories for a user with no tasks, got %+v", summary.ByCategory)
+	}
+}

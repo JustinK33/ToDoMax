@@ -254,6 +254,40 @@ main {
   color: var(--text-dim);
 }
 
+.habit-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.habit-presets button {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.8rem;
+  background: transparent;
+  color: var(--text-dim);
+}
+
+.week-summary {
+  margin: 0.5rem 1rem 0;
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.week-summary .total {
+  font-weight: 500;
+  margin-bottom: 0.4rem;
+}
+
+.week-summary .categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
 .hidden {
   display: none !important;
 }

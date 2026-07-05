@@ -599,3 +599,58 @@ func (s *Store) ClaimReminder(ctx context.Context, taskID, occurrenceDate string
 	}
 	return tag.RowsAffected() > 0, nil
 }
+
+// CategoryProgress is one category's completion count for a WeekSummary.
+type CategoryProgress struct {
+	Category  string `json:"category"`
+	Expected  int    `json:"expected"`
+	Completed int    `json:"completed"`
+}
+
+// WeekSummary is how many of this week's expected occurrences (recurring
+// tasks expanded per matching day, plus non-recurring tasks due this week)
+// have been completed, overall and broken down by category.
+type WeekSummary struct {
+	Expected   int                `json:"expected"`
+	Completed  int                `json:"completed"`
+	ByCategory []CategoryProgress `json:"by_category"`
+}
+
+func (s *Store) WeekSummary(ctx context.Context, userID string, now time.Time) (WeekSummary, error) {
+	occurrences, err := s.ListOccurrences(ctx, userID, Filter{View: "week", Now: now})
+	if err != nil {
+		return WeekSummary{}, err
+	}
+
+	byCategory := map[string]*CategoryProgress{}
+	order := []string{}
+	summary := WeekSummary{ByCategory: []CategoryProgress{}}
+
+	for _, occ := range occurrences {
+		summary.Expected++
+		if occ.Completed {
+			summary.Completed++
+		}
+
+		cat := "uncategorized"
+		if occ.Category != nil && *occ.Category != "" {
+			cat = *occ.Category
+		}
+		cp, ok := byCategory[cat]
+		if !ok {
+			cp = &CategoryProgress{Category: cat}
+			byCategory[cat] = cp
+			order = append(order, cat)
+		}
+		cp.Expected++
+		if occ.Completed {
+			cp.Completed++
+		}
+	}
+
+	sort.Strings(order)
+	for _, cat := range order {
+		summary.ByCategory = append(summary.ByCategory, *byCategory[cat])
+	}
+	return summary, nil
+}

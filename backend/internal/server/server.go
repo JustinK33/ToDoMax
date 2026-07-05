@@ -76,6 +76,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("DELETE /api/tasks/{id}", requireAuth(http.HandlerFunc(s.handleDeleteTask)))
 	mux.Handle("POST /api/tasks/{id}/complete", requireAuth(http.HandlerFunc(s.handleCompleteTask)))
 	mux.Handle("POST /api/tasks/{id}/uncomplete", requireAuth(http.HandlerFunc(s.handleUncompleteTask)))
+	mux.Handle("GET /api/summary/week", requireAuth(http.HandlerFunc(s.handleWeekSummary)))
 	return s.cors(mux)
 }
 

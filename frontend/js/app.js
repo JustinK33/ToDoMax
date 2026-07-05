@@ -12,6 +12,19 @@ const recurrenceType = document.getElementById("recurrence-type");
 const recurrenceDays = document.getElementById("recurrence-days");
 const reminderPreset = document.getElementById("reminder-preset");
 const reminderCustom = document.getElementById("reminder-custom");
+const weekSummaryEl = document.getElementById("week-summary");
+const habitPresetsEl = document.getElementById("habit-presets");
+
+const HABIT_PRESETS = [
+  { title: "Workout", category: "fitness", recurrence_type: "weekly", recurrence_days: [1, 2, 4, 6] },
+  { title: "Hit 10k steps", category: "fitness", recurrence_type: "daily" },
+  { title: "Eat enough protein", category: "nutrition", recurrence_type: "daily" },
+  { title: "Skincare", category: "self-care", recurrence_type: "daily" },
+  { title: "Exfoliate", category: "self-care", recurrence_type: "weekly", recurrence_days: [7] },
+  { title: "Cut nails", category: "self-care", recurrence_type: "weekly", recurrence_days: [7] },
+  { title: "Study", category: "growth", recurrence_type: "daily" },
+  { title: "Sleep routine", category: "wellness", recurrence_type: "daily" },
+];
 
 let editingId = null;
 let currentTasks = [];
@@ -65,6 +78,23 @@ async function refreshCategories() {
   categorySelect.value = categories.includes(selected) ? selected : "";
 }
 
+async function refreshWeekSummary() {
+  if (state.view !== "week") {
+    weekSummaryEl.classList.add("hidden");
+    return;
+  }
+  const summary = await apiFetch("/api/summary/week");
+  const pct = summary.expected ? Math.round((100 * summary.completed) / summary.expected) : 0;
+  const categories = (summary.by_category ?? [])
+    .map((c) => `<span>${escapeHtml(c.category)}: ${c.completed}/${c.expected}</span>`)
+    .join("");
+  weekSummaryEl.innerHTML = `
+    <div class="total">${summary.completed}/${summary.expected} done this week (${pct}%)</div>
+    <div class="categories">${categories}</div>
+  `;
+  weekSummaryEl.classList.remove("hidden");
+}
+
 viewTabs.addEventListener("click", async (e) => {
   const btn = e.target.closest("button[data-view]");
   if (!btn) return;
@@ -73,6 +103,7 @@ viewTabs.addEventListener("click", async (e) => {
     b.classList.toggle("active", b === btn);
   }
   await loadTasks();
+  await refreshWeekSummary();
 });
 
 categorySelect.addEventListener("change", async () => {
@@ -149,6 +180,14 @@ function openModal(task) {
   updateRecurrenceDaysVisibility();
   setReminderMinutes(task?.reminder_minutes_before ?? null);
   deleteBtn.classList.toggle("hidden", !editingId);
+
+  habitPresetsEl.classList.toggle("hidden", !!editingId);
+  if (!editingId && habitPresetsEl.childElementCount === 0) {
+    habitPresetsEl.innerHTML = HABIT_PRESETS.map(
+      (p, i) => `<button type="button" data-preset="${i}">${escapeHtml(p.title)}</button>`
+    ).join("");
+  }
+
   modalBackdrop.classList.remove("hidden");
 }
 
@@ -160,6 +199,17 @@ function closeModal() {
   updateRecurrenceDaysVisibility();
   setReminderMinutes(null);
 }
+
+habitPresetsEl.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-preset]");
+  if (!btn) return;
+  const preset = HABIT_PRESETS[Number(btn.dataset.preset)];
+  form.title.value = preset.title;
+  form.category.value = preset.category;
+  recurrenceType.value = preset.recurrence_type;
+  setSelectedDays(preset.recurrence_days ?? []);
+  updateRecurrenceDaysVisibility();
+});
 
 document.getElementById("new-task").addEventListener("click", () => openModal(null));
 document.getElementById("cancel-modal").addEventListener("click", closeModal);
@@ -175,6 +225,7 @@ listEl.addEventListener("click", async (e) => {
     const body = checkbox.dataset.date ? JSON.stringify({ occurrence_date: checkbox.dataset.date }) : undefined;
     await apiFetch(`/api/tasks/${id}/${action}`, { method: "POST", body });
     await loadTasks();
+    await refreshWeekSummary();
     return;
   }
 
@@ -211,6 +262,7 @@ form.addEventListener("submit", async (e) => {
   closeModal();
   await loadTasks();
   await refreshCategories();
+  await refreshWeekSummary();
 });
 
 deleteBtn.addEventListener("click", async () => {
@@ -219,7 +271,9 @@ deleteBtn.addEventListener("click", async () => {
   closeModal();
   await loadTasks();
   await refreshCategories();
+  await refreshWeekSummary();
 });
 
 await loadTasks();
 await refreshCategories();
+await refreshWeekSummary();

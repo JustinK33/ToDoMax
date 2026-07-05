@@ -90,6 +90,17 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleWeekSummary(w http.ResponseWriter, r *http.Request) {
+	userID, _ := auth.UserID(r.Context())
+
+	summary, err := s.tasks.WeekSummary(r.Context(), userID, time.Now().In(s.cfg.Location))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
+}
+
 func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
 	userID, _ := auth.UserID(r.Context())
 	id := r.PathValue("id")
