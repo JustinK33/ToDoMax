@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#121212" />
+  <title>ToDoMax - Sign in</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="auth-page">
+    <h1>ToDoMax</h1>
+    <input id="email" type="email" placeholder="Email" autocomplete="email" />
+    <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
+    <p id="error" class="error"></p>
+    <button id="signin">Sign in</button>
+    <button id="signup">Sign up</button>
+  </div>
+
+  <script type="module">
+    import { supabase } from "./js/supabase-client.js";
+
+    const emailEl = document.getElementById("email");
+    const passwordEl = document.getElementById("password");
+    const errorEl = document.getElementById("error");
+
+    const { data } = await supabase.auth.getSession();
+    if (data.session) {
+      window.location.replace("index.html");
+    }
+
+    function showError(err) {
+      errorEl.textContent = err?.message ?? String(err);
+    }
+
+    document.getElementById("signin").addEventListener("click", async () => {
+      errorEl.textContent = "";
+      const { error } = await supabase.auth.signInWithPassword({
+        email: emailEl.value,
+        password: passwordEl.value,
+      });
+      if (error) return showError(error);
+      window.location.replace("index.html");
+    });
+
+    document.getElementById("signup").addEventListener("click", async () => {
+      errorEl.textContent = "";
+      const { error } = await supabase.auth.signUp({
+        email: emailEl.value,
+        password: passwordEl.value,
+      });
+      if (error) return showError(error);
+      window.location.replace("index.html");
+    });
+  </script>
+</body>
+</html>

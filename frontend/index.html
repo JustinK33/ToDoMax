@@ -13,10 +13,23 @@
   <div class="app">
     <header>
       <h1>ToDoMax</h1>
+      <button id="logout">Log out</button>
     </header>
     <main>
-      <p class="empty-state">Under construction - auth and tasks land in the next milestones.</p>
+      <p class="empty-state">Signed in. Task views land in the next milestone.</p>
     </main>
   </div>
+
+  <script type="module">
+    import { supabase } from "./js/supabase-client.js";
+    import { requireSession } from "./js/auth-guard.js";
+
+    await requireSession();
+
+    document.getElementById("logout").addEventListener("click", async () => {
+      await supabase.auth.signOut();
+      window.location.replace("login.html");
+    });
+  </script>
 </body>
 </html>
