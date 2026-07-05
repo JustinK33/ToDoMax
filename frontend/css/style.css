@@ -388,3 +388,7 @@ main {
   font-size: 0.85rem;
   min-height: 1.2em;
 }
+
+.error.info {
+  color: var(--accent);
+}

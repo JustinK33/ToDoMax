@@ -36,23 +36,41 @@
       errorEl.textContent = err?.message ?? String(err);
     }
 
-    document.getElementById("signin").addEventListener("click", async () => {
+    const signinBtn = document.getElementById("signin");
+    const signupBtn = document.getElementById("signup");
+
+    signinBtn.addEventListener("click", async () => {
       errorEl.textContent = "";
+      errorEl.classList.remove("info");
+      signinBtn.disabled = true;
+      signupBtn.disabled = true;
       const { error } = await supabase.auth.signInWithPassword({
         email: emailEl.value,
         password: passwordEl.value,
       });
+      signinBtn.disabled = false;
+      signupBtn.disabled = false;
       if (error) return showError(error);
       window.location.replace("index.html");
     });
 
-    document.getElementById("signup").addEventListener("click", async () => {
+    signupBtn.addEventListener("click", async () => {
       errorEl.textContent = "";
-      const { error } = await supabase.auth.signUp({
+      errorEl.classList.remove("info");
+      signinBtn.disabled = true;
+      signupBtn.disabled = true;
+      const { data, error } = await supabase.auth.signUp({
         email: emailEl.value,
         password: passwordEl.value,
       });
+      signinBtn.disabled = false;
+      signupBtn.disabled = false;
       if (error) return showError(error);
+      if (!data.session) {
+        errorEl.textContent = "Check your email to confirm your account, then sign in.";
+        errorEl.classList.add("info");
+        return;
+      }
       window.location.replace("index.html");
     });
   </script>
