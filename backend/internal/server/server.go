@@ -11,6 +11,7 @@ import (
 
 	"github.com/justin/todomax/backend/internal/auth"
 	"github.com/justin/todomax/backend/internal/config"
+	"github.com/justin/todomax/backend/internal/reminder"
 	"github.com/justin/todomax/backend/internal/task"
 )
 
@@ -41,7 +42,18 @@ func New() (*Server, error) {
 		return nil, err
 	}
 
-	return &Server{cfg: cfg, db: db, authKeys: authKeys, tasks: task.NewStore(db), stop: cancel}, nil
+	tasks := task.NewStore(db)
+
+	if db != nil {
+		reminderRunner := reminder.New(tasks, reminder.Config{
+			ResendAPIKey: cfg.ResendAPIKey,
+			FromEmail:    cfg.ReminderFromEmail,
+			ToEmail:      cfg.ReminderToEmail,
+		}, cfg.Location)
+		go reminderRunner.Run(ctx)
+	}
+
+	return &Server{cfg: cfg, db: db, authKeys: authKeys, tasks: tasks, stop: cancel}, nil
 }
 
 func (s *Server) Close() {

@@ -10,6 +10,8 @@ const viewTabs = document.getElementById("view-tabs");
 const categorySelect = document.getElementById("category-select");
 const recurrenceType = document.getElementById("recurrence-type");
 const recurrenceDays = document.getElementById("recurrence-days");
+const reminderPreset = document.getElementById("reminder-preset");
+const reminderCustom = document.getElementById("reminder-custom");
 
 let editingId = null;
 let currentTasks = [];
@@ -107,6 +109,33 @@ recurrenceDays.addEventListener("click", (e) => {
   }
 });
 
+const REMINDER_PRESETS = ["10", "30", "60", "1440"];
+
+function setReminderMinutes(minutes) {
+  if (minutes == null) {
+    reminderPreset.value = "";
+  } else if (REMINDER_PRESETS.includes(String(minutes))) {
+    reminderPreset.value = String(minutes);
+  } else {
+    reminderPreset.value = "custom";
+    reminderCustom.value = minutes;
+  }
+  reminderCustom.classList.toggle("hidden", reminderPreset.value !== "custom");
+}
+
+function getReminderMinutes() {
+  if (reminderPreset.value === "") return null;
+  if (reminderPreset.value === "custom") {
+    const n = Number(reminderCustom.value);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+  return Number(reminderPreset.value);
+}
+
+reminderPreset.addEventListener("change", () => {
+  reminderCustom.classList.toggle("hidden", reminderPreset.value !== "custom");
+});
+
 function openModal(task) {
   editingId = task?.id ?? null;
   modalTitle.textContent = editingId ? "Edit task" : "New task";
@@ -118,6 +147,7 @@ function openModal(task) {
   recurrenceType.value = task?.recurrence_type ?? "none";
   setSelectedDays(task?.recurrence_days ?? []);
   updateRecurrenceDaysVisibility();
+  setReminderMinutes(task?.reminder_minutes_before ?? null);
   deleteBtn.classList.toggle("hidden", !editingId);
   modalBackdrop.classList.remove("hidden");
 }
@@ -128,6 +158,7 @@ function closeModal() {
   form.reset();
   setSelectedDays([]);
   updateRecurrenceDaysVisibility();
+  setReminderMinutes(null);
 }
 
 document.getElementById("new-task").addEventListener("click", () => openModal(null));
@@ -164,6 +195,7 @@ form.addEventListener("submit", async (e) => {
     due_time: form.due_time.value || null,
     recurrence_type: recurrenceType.value,
     recurrence_days: recurrenceType.value === "weekly" ? getSelectedDays() : [],
+    reminder_minutes_before: getReminderMinutes(),
   };
   if (!payload.title) return;
   if (payload.recurrence_type === "weekly" && payload.recurrence_days.length === 0) {

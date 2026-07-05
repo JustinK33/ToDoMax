@@ -23,6 +23,15 @@ cd backend && go run ./cmd/server
 Serve `frontend/` with any static file server (e.g. `npx serve frontend`) and
 open it in a browser.
 
+### Reminders
+
+The backend ticks every minute and emails a reminder shortly before a task's
+due time (only for tasks with both a due time and a reminder set). It calls
+[Resend](https://resend.com)'s REST API directly - no SDK. Set
+`RESEND_API_KEY`, `REMINDER_FROM_EMAIL`, `REMINDER_TO_EMAIL` in `.env` to
+enable sending; without a key it just logs what it would have sent, so local
+dev works without a Resend account.
+
 ## Testing
 
 ```bash

@@ -307,3 +307,122 @@ func TestRecurringOccurrences(t *testing.T) {
 		}
 	})
 }
+
+func minutesPtr(m int) *int { return &m }
+
+// TestOccurrenceCarriesReminderField guards against Occurrence (returned by
+// the today/week/upcoming views the frontend edits from) silently dropping
+// fields that only exist on Task - this exact bug shipped once already:
+// reminder_minutes_before was on Task but missing from Occurrence, so the
+// edit modal always showed "no reminder" for anything opened from those views.
+func TestOccurrenceCarriesReminderField(t *testing.T) {
+	store, userID := newTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)
+	today := now.Format("2006-01-02")
+
+	nonRecurring, err := store.Create(ctx, userID, Input{
+		Title: "standup", DueDate: &today, DueTime: strPtr("09:00"), ReminderMinutesBefore: minutesPtr(20),
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	occurrences, err := store.ListOccurrences(ctx, userID, Filter{View: "today", Now: now})
+	if err != nil {
+		t.Fatalf("ListOccurrences failed: %v", err)
+	}
+	if len(occurrences) != 1 || occurrences[0].ReminderMinutesBefore == nil || *occurrences[0].ReminderMinutesBefore != 20 {
+		t.Fatalf("expected occurrence to carry reminder_minutes_before=20, got %+v", occurrences)
+	}
+
+	occ, err := store.SetOccurrenceCompleted(ctx, userID, nonRecurring.ID, today, true)
+	if err != nil {
+		t.Fatalf("SetOccurrenceCompleted failed: %v", err)
+	}
+	if occ.ReminderMinutesBefore == nil || *occ.ReminderMinutesBefore != 20 {
+		t.Fatalf("expected SetOccurrenceCompleted result to carry reminder_minutes_before=20, got %+v", occ)
+	}
+}
+
+func TestDueReminders(t *testing.T) {
+	store, userID := newTestStore(t)
+	ctx := context.Background()
+
+	now := time.Date(2026, 7, 8, 14, 0, 0, 0, time.UTC) // 2:00pm
+	today := now.Format("2006-01-02")
+
+	inWindow, err := store.Create(ctx, userID, Input{
+		Title: "in window", DueDate: &today, DueTime: strPtr("14:10:00"), ReminderMinutesBefore: minutesPtr(15),
+	})
+	if err != nil {
+		t.Fatalf("Create in-window failed: %v", err)
+	}
+	tooEarly, err := store.Create(ctx, userID, Input{
+		Title: "too early", DueDate: &today, DueTime: strPtr("15:00:00"), ReminderMinutesBefore: minutesPtr(5),
+	})
+	if err != nil {
+		t.Fatalf("Create too-early failed: %v", err)
+	}
+	alreadyPassed, err := store.Create(ctx, userID, Input{
+		Title: "already passed", DueDate: &today, DueTime: strPtr("13:00:00"), ReminderMinutesBefore: minutesPtr(10),
+	})
+	if err != nil {
+		t.Fatalf("Create already-passed failed: %v", err)
+	}
+	noReminder, err := store.Create(ctx, userID, Input{
+		Title: "no reminder set", DueDate: &today, DueTime: strPtr("14:05:00"),
+	})
+	if err != nil {
+		t.Fatalf("Create no-reminder failed: %v", err)
+	}
+
+	// Weekly recurring, but not scheduled for whatever weekday `now` falls on -
+	// must not fire even though the time-of-day matches.
+	wrongDay := int(now.Weekday()) + 2
+	if wrongDay > 7 {
+		wrongDay -= 7
+	}
+	recurringOtherDay, err := store.Create(ctx, userID, Input{
+		Title: "recurring other day", RecurrenceType: "weekly", RecurrenceDays: []int{wrongDay},
+		DueTime: strPtr("14:05:00"), ReminderMinutesBefore: minutesPtr(30),
+	})
+	if err != nil {
+		t.Fatalf("Create recurring-other-day failed: %v", err)
+	}
+
+	candidates, err := store.DueReminders(ctx, now)
+	if err != nil {
+		t.Fatalf("DueReminders failed: %v", err)
+	}
+
+	byID := map[string]bool{}
+	for _, c := range candidates {
+		byID[c.TaskID] = true
+	}
+	if !byID[inWindow.ID] {
+		t.Fatalf("expected in-window task to be a candidate, got %+v", candidates)
+	}
+	for _, notExpected := range []Task{tooEarly, alreadyPassed, noReminder, recurringOtherDay} {
+		if byID[notExpected.ID] {
+			t.Fatalf("did not expect %q to be a reminder candidate", notExpected.Title)
+		}
+	}
+
+	t.Run("claim is exactly-once", func(t *testing.T) {
+		claimed, err := store.ClaimReminder(ctx, inWindow.ID, today)
+		if err != nil {
+			t.Fatalf("ClaimReminder failed: %v", err)
+		}
+		if !claimed {
+			t.Fatalf("expected first claim to succeed")
+		}
+		claimedAgain, err := store.ClaimReminder(ctx, inWindow.ID, today)
+		if err != nil {
+			t.Fatalf("ClaimReminder (again) failed: %v", err)
+		}
+		if claimedAgain {
+			t.Fatalf("expected second claim for the same task+date to fail")
+		}
+	})
+}

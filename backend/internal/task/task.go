@@ -18,43 +18,46 @@ import (
 // exactly what the frontend sent. For a recurring task, DueDate is the
 // anchor date recurrence starts from, not "the" due date.
 type Task struct {
-	ID             string    `json:"id"`
-	Title          string    `json:"title"`
-	Notes          *string   `json:"notes"`
-	Category       *string   `json:"category"`
-	DueDate        *string   `json:"due_date"`
-	DueTime        *string   `json:"due_time"`
-	RecurrenceType string    `json:"recurrence_type"`
-	RecurrenceDays []int     `json:"recurrence_days,omitempty"`
-	Completed      bool      `json:"completed"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID                    string    `json:"id"`
+	Title                 string    `json:"title"`
+	Notes                 *string   `json:"notes"`
+	Category              *string   `json:"category"`
+	DueDate               *string   `json:"due_date"`
+	DueTime               *string   `json:"due_time"`
+	RecurrenceType        string    `json:"recurrence_type"`
+	RecurrenceDays        []int     `json:"recurrence_days,omitempty"`
+	ReminderMinutesBefore *int      `json:"reminder_minutes_before"`
+	Completed             bool      `json:"completed"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
 }
 
 // Occurrence is a single day's instance of a task, as shown in the
 // today/week/upcoming views. For a non-recurring task there's exactly one
 // occurrence (its due date); for a recurring task, one per matching day.
 type Occurrence struct {
-	TaskID         string  `json:"id"`
-	Title          string  `json:"title"`
-	Notes          *string `json:"notes"`
-	Category       *string `json:"category"`
-	DueDate        string  `json:"due_date"`
-	DueTime        *string `json:"due_time"`
-	RecurrenceType string  `json:"recurrence_type"`
-	RecurrenceDays []int   `json:"recurrence_days,omitempty"`
-	Completed      bool    `json:"completed"`
+	TaskID                string  `json:"id"`
+	Title                 string  `json:"title"`
+	Notes                 *string `json:"notes"`
+	Category              *string `json:"category"`
+	DueDate               string  `json:"due_date"`
+	DueTime               *string `json:"due_time"`
+	RecurrenceType        string  `json:"recurrence_type"`
+	RecurrenceDays        []int   `json:"recurrence_days,omitempty"`
+	ReminderMinutesBefore *int    `json:"reminder_minutes_before"`
+	Completed             bool    `json:"completed"`
 }
 
 // Input is the subset of Task fields a client may set on create/update.
 type Input struct {
-	Title          string  `json:"title"`
-	Notes          *string `json:"notes"`
-	Category       *string `json:"category"`
-	DueDate        *string `json:"due_date"`
-	DueTime        *string `json:"due_time"`
-	RecurrenceType string  `json:"recurrence_type"`
-	RecurrenceDays []int   `json:"recurrence_days"`
+	Title                 string  `json:"title"`
+	Notes                 *string `json:"notes"`
+	Category              *string `json:"category"`
+	DueDate               *string `json:"due_date"`
+	DueTime               *string `json:"due_time"`
+	RecurrenceType        string  `json:"recurrence_type"`
+	RecurrenceDays        []int   `json:"recurrence_days"`
+	ReminderMinutesBefore *int    `json:"reminder_minutes_before"`
 }
 
 // ErrInvalidInput is returned when input fields don't parse or don't satisfy
@@ -152,7 +155,7 @@ func NewStore(db *pgxpool.Pool) *Store {
 	return &Store{db: db}
 }
 
-const taskColumns = "id, title, notes, category, due_date, due_time, recurrence_type, recurrence_days, completed, created_at, updated_at"
+const taskColumns = "id, title, notes, category, due_date, due_time, recurrence_type, recurrence_days, reminder_minutes_before, completed, created_at, updated_at"
 
 func scanTask(row pgx.Row) (Task, error) {
 	var t Task
@@ -160,7 +163,7 @@ func scanTask(row pgx.Row) (Task, error) {
 	var dueTime pgtype.Time
 	var recurrenceDays []int16
 	err := row.Scan(&t.ID, &t.Title, &t.Notes, &t.Category, &dueDate, &dueTime,
-		&t.RecurrenceType, &recurrenceDays, &t.Completed, &t.CreatedAt, &t.UpdatedAt)
+		&t.RecurrenceType, &recurrenceDays, &t.ReminderMinutesBefore, &t.Completed, &t.CreatedAt, &t.UpdatedAt)
 	t.DueDate = formatDate(dueDate)
 	t.DueTime = formatTime(dueTime)
 	t.RecurrenceDays = int16sToInts(recurrenceDays)
@@ -182,10 +185,10 @@ func (s *Store) Create(ctx context.Context, userID string, in Input) (Task, erro
 	}
 
 	row := s.db.QueryRow(ctx, `
-		insert into tasks (user_id, title, notes, category, due_date, due_time, recurrence_type, recurrence_days)
-		values ($1, $2, $3, $4, $5, $6, $7, $8)
+		insert into tasks (user_id, title, notes, category, due_date, due_time, recurrence_type, recurrence_days, reminder_minutes_before)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		returning `+taskColumns,
-		userID, in.Title, in.Notes, in.Category, dueDate, dueTime, recurrenceType, recurrenceDays,
+		userID, in.Title, in.Notes, in.Category, dueDate, dueTime, recurrenceType, recurrenceDays, in.ReminderMinutesBefore,
 	)
 	return scanTask(row)
 }
@@ -364,7 +367,7 @@ func (s *Store) ListOccurrences(ctx context.Context, userID string, f Filter) ([
 			out = append(out, Occurrence{
 				TaskID: t.ID, Title: t.Title, Notes: t.Notes, Category: t.Category,
 				DueDate: *t.DueDate, DueTime: t.DueTime, RecurrenceType: t.RecurrenceType,
-				Completed: t.Completed,
+				ReminderMinutesBefore: t.ReminderMinutesBefore, Completed: t.Completed,
 			})
 			continue
 		}
@@ -385,7 +388,8 @@ func (s *Store) ListOccurrences(ctx context.Context, userID string, f Filter) ([
 			out = append(out, Occurrence{
 				TaskID: t.ID, Title: t.Title, Notes: t.Notes, Category: t.Category,
 				DueDate: dateStr, DueTime: t.DueTime, RecurrenceType: t.RecurrenceType,
-				RecurrenceDays: t.RecurrenceDays, Completed: completions[t.ID+"|"+dateStr],
+				RecurrenceDays: t.RecurrenceDays, ReminderMinutesBefore: t.ReminderMinutesBefore,
+				Completed: completions[t.ID+"|"+dateStr],
 			})
 		}
 	}
@@ -426,10 +430,10 @@ func (s *Store) Update(ctx context.Context, userID, id string, in Input) (Task, 
 	row := s.db.QueryRow(ctx, `
 		update tasks
 		set title = $3, notes = $4, category = $5, due_date = $6, due_time = $7,
-		    recurrence_type = $8, recurrence_days = $9, updated_at = now()
+		    recurrence_type = $8, recurrence_days = $9, reminder_minutes_before = $10, updated_at = now()
 		where user_id = $1 and id = $2
 		returning `+taskColumns,
-		userID, id, in.Title, in.Notes, in.Category, dueDate, dueTime, recurrenceType, recurrenceDays,
+		userID, id, in.Title, in.Notes, in.Category, dueDate, dueTime, recurrenceType, recurrenceDays, in.ReminderMinutesBefore,
 	)
 	return scanTask(row)
 }
@@ -478,7 +482,7 @@ func (s *Store) SetOccurrenceCompleted(ctx context.Context, userID, id, occurren
 		return Occurrence{
 			TaskID: updated.ID, Title: updated.Title, Notes: updated.Notes, Category: updated.Category,
 			DueDate: date, DueTime: updated.DueTime, RecurrenceType: updated.RecurrenceType,
-			Completed: updated.Completed,
+			ReminderMinutesBefore: updated.ReminderMinutesBefore, Completed: updated.Completed,
 		}, nil
 	}
 
@@ -502,6 +506,96 @@ func (s *Store) SetOccurrenceCompleted(ctx context.Context, userID, id, occurren
 	return Occurrence{
 		TaskID: t.ID, Title: t.Title, Notes: t.Notes, Category: t.Category,
 		DueDate: occurrenceDate, DueTime: t.DueTime, RecurrenceType: t.RecurrenceType,
-		RecurrenceDays: t.RecurrenceDays, Completed: completed,
+		RecurrenceDays: t.RecurrenceDays, ReminderMinutesBefore: t.ReminderMinutesBefore, Completed: completed,
 	}, nil
+}
+
+// ReminderCandidate is a task whose reminder window has opened - now is
+// between (due time - reminder_minutes_before) and (due time), for today's
+// occurrence, and no reminder_log row exists for it yet.
+type ReminderCandidate struct {
+	TaskID         string
+	Title          string
+	OccurrenceDate string
+	DueAt          time.Time
+}
+
+// DueReminders scans every task across all users (this runs as a background
+// job on a direct DB connection, not a per-user API request) for ones whose
+// reminder window has opened right now. Only tasks with both due_time and
+// reminder_minutes_before set are eligible - "remind me N minutes before" is
+// meaningless without a specific time of day.
+func (s *Store) DueReminders(ctx context.Context, now time.Time) ([]ReminderCandidate, error) {
+	rows, err := s.db.Query(ctx, `
+		select `+taskColumns+` from tasks
+		where reminder_minutes_before is not null and due_time is not null`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	var tasks []Task
+	for rows.Next() {
+		t, err := scanTask(rows)
+		if err != nil {
+			rows.Close()
+			return nil, err
+		}
+		tasks = append(tasks, t)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	todayStr := today.Format("2006-01-02")
+
+	var out []ReminderCandidate
+	for _, t := range tasks {
+		occDate := todayStr
+		if t.RecurrenceType == "none" {
+			if t.DueDate == nil {
+				continue
+			}
+			occDate = *t.DueDate
+		} else {
+			var anchor *time.Time
+			if t.DueDate != nil {
+				a, err := time.Parse("2006-01-02", *t.DueDate)
+				if err == nil {
+					anchor = &a
+				}
+			}
+			if !occursOn(t, anchor, today) {
+				continue
+			}
+		}
+
+		dueAt, err := time.ParseInLocation("2006-01-02 15:04:05", occDate+" "+*t.DueTime, now.Location())
+		if err != nil {
+			continue
+		}
+		reminderAt := dueAt.Add(-time.Duration(*t.ReminderMinutesBefore) * time.Minute)
+		if now.Before(reminderAt) || !now.Before(dueAt) {
+			continue
+		}
+
+		out = append(out, ReminderCandidate{TaskID: t.ID, Title: t.Title, OccurrenceDate: occDate, DueAt: dueAt})
+	}
+	return out, nil
+}
+
+// ClaimReminder atomically marks a reminder as sent, returning true only if
+// this call was the one that claimed it (false means another tick already
+// sent it - the unique constraint on reminder_log is what makes this safe).
+func (s *Store) ClaimReminder(ctx context.Context, taskID, occurrenceDate string) (bool, error) {
+	tag, err := s.db.Exec(ctx, `
+		insert into reminder_log (task_id, occurrence_date) values ($1, $2)
+		on conflict (task_id, occurrence_date) do nothing`,
+		taskID, occurrenceDate,
+	)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
 }

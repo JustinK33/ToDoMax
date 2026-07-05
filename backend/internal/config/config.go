@@ -7,11 +7,14 @@ import (
 )
 
 type Config struct {
-	DatabaseURL     string
-	SupabaseURL     string
-	Port            string
-	FrontendOrigins []string
-	Location        *time.Location
+	DatabaseURL       string
+	SupabaseURL       string
+	Port              string
+	FrontendOrigins   []string
+	Location          *time.Location
+	ResendAPIKey      string
+	ReminderFromEmail string
+	ReminderToEmail   string
 }
 
 func Load() Config {
@@ -28,10 +31,13 @@ func Load() Config {
 	}
 
 	return Config{
-		DatabaseURL:     os.Getenv("DATABASE_URL"),
-		SupabaseURL:     os.Getenv("SUPABASE_URL"),
-		Port:            os.Getenv("PORT"),
-		FrontendOrigins: origins,
-		Location:        loc,
+		DatabaseURL:       os.Getenv("DATABASE_URL"),
+		SupabaseURL:       os.Getenv("SUPABASE_URL"),
+		Port:              os.Getenv("PORT"),
+		FrontendOrigins:   origins,
+		Location:          loc,
+		ResendAPIKey:      os.Getenv("RESEND_API_KEY"),
+		ReminderFromEmail: os.Getenv("REMINDER_FROM_EMAIL"),
+		ReminderToEmail:   os.Getenv("REMINDER_TO_EMAIL"),
 	}
 }
