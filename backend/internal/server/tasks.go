@@ -3,7 +3,9 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -22,6 +24,15 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 	http.Error(w, msg, status)
 }
 
+// writeUnexpectedErr logs the real error server-side (a 500 here is
+// otherwise invisible to anyone but the caller) and returns a message with
+// no internal detail - raw driver/query errors can include table or column
+// names that shouldn't reach the client.
+func writeUnexpectedErr(w http.ResponseWriter, err error) {
+	log.Printf("server: unexpected error: %v", err)
+	writeErr(w, http.StatusInternalServerError, "internal server error")
+}
+
 func taskErrStatus(err error) int {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return http.StatusNotFound
@@ -33,6 +44,19 @@ func taskErrStatus(err error) int {
 	return http.StatusInternalServerError
 }
 
+// writeTaskErr writes a Store error as an HTTP response - ErrInvalidInput's
+// message is meant to be user-facing (it names the validation that failed),
+// but anything that maps to a 500 goes through writeUnexpectedErr instead of
+// exposing the raw error.
+func writeTaskErr(w http.ResponseWriter, err error) {
+	status := taskErrStatus(err)
+	if status == http.StatusInternalServerError {
+		writeUnexpectedErr(w, err)
+		return
+	}
+	writeErr(w, status, err.Error())
+}
+
 func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	userID, _ := auth.UserID(r.Context())
 
@@ -41,6 +65,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
+	in.Title = strings.TrimSpace(in.Title)
 	if in.Title == "" {
 		writeErr(w, http.StatusBadRequest, "title is required")
 		return
@@ -48,7 +73,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 
 	t, err := s.tasks.Create(r.Context(), userID, in)
 	if err != nil {
-		writeErr(w, taskErrStatus(err), err.Error())
+		writeTaskErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, t)
@@ -70,7 +95,7 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 	case "today", "week", "upcoming":
 		occurrences, err := s.tasks.ListOccurrences(r.Context(), userID, filter)
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, err.Error())
+			writeUnexpectedErr(w, err)
 			return
 		}
 		if occurrences == nil {
@@ -80,7 +105,7 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 	default:
 		tasks, err := s.tasks.List(r.Context(), userID, filter)
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, err.Error())
+			writeUnexpectedErr(w, err)
 			return
 		}
 		if tasks == nil {
@@ -95,7 +120,7 @@ func (s *Server) handleWeekSummary(w http.ResponseWriter, r *http.Request) {
 
 	summary, err := s.tasks.WeekSummary(r.Context(), userID, time.Now().In(s.cfg.Location))
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeUnexpectedErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, summary)
@@ -122,6 +147,7 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
+	in.Title = strings.TrimSpace(in.Title)
 	if in.Title == "" {
 		writeErr(w, http.StatusBadRequest, "title is required")
 		return
@@ -129,7 +155,7 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 
 	t, err := s.tasks.Update(r.Context(), userID, id, in)
 	if err != nil {
-		writeErr(w, taskErrStatus(err), err.Error())
+		writeTaskErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, t)

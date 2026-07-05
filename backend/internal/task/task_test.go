@@ -391,6 +391,29 @@ func TestDueReminders(t *testing.T) {
 		t.Fatalf("Create recurring-other-day failed: %v", err)
 	}
 
+	// A task already marked done shouldn't still get a reminder email, for
+	// both the tasks.completed column (non-recurring) and a same-day
+	// task_completions row (recurring).
+	completedNonRecurring, err := store.Create(ctx, userID, Input{
+		Title: "completed non-recurring", DueDate: &today, DueTime: strPtr("14:05:00"), ReminderMinutesBefore: minutesPtr(10),
+	})
+	if err != nil {
+		t.Fatalf("Create completed-non-recurring failed: %v", err)
+	}
+	if _, err := store.SetOccurrenceCompleted(ctx, userID, completedNonRecurring.ID, today, true); err != nil {
+		t.Fatalf("SetOccurrenceCompleted failed: %v", err)
+	}
+	recurringCompletedToday, err := store.Create(ctx, userID, Input{
+		Title: "recurring completed today", RecurrenceType: "daily",
+		DueTime: strPtr("14:05:00"), ReminderMinutesBefore: minutesPtr(10),
+	})
+	if err != nil {
+		t.Fatalf("Create recurring-completed-today failed: %v", err)
+	}
+	if _, err := store.SetOccurrenceCompleted(ctx, userID, recurringCompletedToday.ID, today, true); err != nil {
+		t.Fatalf("SetOccurrenceCompleted (recurring) failed: %v", err)
+	}
+
 	candidates, err := store.DueReminders(ctx, now)
 	if err != nil {
 		t.Fatalf("DueReminders failed: %v", err)
@@ -403,9 +426,10 @@ func TestDueReminders(t *testing.T) {
 	if !byID[inWindow.ID] {
 		t.Fatalf("expected in-window task to be a candidate, got %+v", candidates)
 	}
-	for _, notExpected := range []Task{tooEarly, alreadyPassed, noReminder, recurringOtherDay} {
-		if byID[notExpected.ID] {
-			t.Fatalf("did not expect %q to be a reminder candidate", notExpected.Title)
+	notExpected := []Task{tooEarly, alreadyPassed, noReminder, recurringOtherDay, completedNonRecurring, recurringCompletedToday}
+	for _, task := range notExpected {
+		if byID[task.ID] {
+			t.Fatalf("did not expect %q to be a reminder candidate", task.Title)
 		}
 	}
 

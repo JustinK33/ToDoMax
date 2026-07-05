@@ -32,7 +32,14 @@ func Middleware(kf keyfunc.Keyfunc) func(http.Handler) http.Handler {
 			}
 
 			claims := jwt.MapClaims{}
-			token, err := jwt.ParseWithClaims(tokenStr, claims, kf.Keyfunc)
+			// Explicit allow-list rather than relying on keyfunc/jwt-go's
+			// incidental algorithm-confusion protection, and require exp so
+			// a token with no expiration isn't implicitly treated as
+			// non-expiring.
+			token, err := jwt.ParseWithClaims(tokenStr, claims, kf.Keyfunc,
+				jwt.WithValidMethods([]string{"ES256"}),
+				jwt.WithExpirationRequired(),
+			)
 			if err != nil || !token.Valid {
 				http.Error(w, "invalid token", http.StatusUnauthorized)
 				return

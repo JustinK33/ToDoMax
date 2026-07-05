@@ -119,6 +119,17 @@ func parseRecurrence(in Input) (string, []int16, error) {
 	}
 }
 
+// validateReminder rejects a negative reminder_minutes_before - the
+// reminder-scanning math (dueAt minus the offset) would otherwise place the
+// reminder window after the due time, so the reminder could never fire and
+// the bad value would just sit there silently.
+func validateReminder(in Input) error {
+	if in.ReminderMinutesBefore != nil && *in.ReminderMinutesBefore < 0 {
+		return ErrInvalidInput{"reminder_minutes_before must not be negative"}
+	}
+	return nil
+}
+
 func formatDate(d pgtype.Date) *string {
 	if !d.Valid {
 		return nil
@@ -181,6 +192,9 @@ func (s *Store) Create(ctx context.Context, userID string, in Input) (Task, erro
 	}
 	recurrenceType, recurrenceDays, err := parseRecurrence(in)
 	if err != nil {
+		return Task{}, err
+	}
+	if err := validateReminder(in); err != nil {
 		return Task{}, err
 	}
 
@@ -426,6 +440,9 @@ func (s *Store) Update(ctx context.Context, userID, id string, in Input) (Task, 
 	if err != nil {
 		return Task{}, err
 	}
+	if err := validateReminder(in); err != nil {
+		return Task{}, err
+	}
 
 	row := s.db.QueryRow(ctx, `
 		update tasks
@@ -550,11 +567,45 @@ func (s *Store) DueReminders(ctx context.Context, now time.Time) ([]ReminderCand
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	todayStr := today.Format("2006-01-02")
 
+	// Recurring tasks track per-day completion in task_completions rather
+	// than the tasks.completed column, so today's completions need a
+	// separate lookup - without it, a task checked off before its reminder
+	// window closes would still get emailed as if it were still due.
+	var recurringIDs []string
+	for _, t := range tasks {
+		if t.RecurrenceType != "none" {
+			recurringIDs = append(recurringIDs, t.ID)
+		}
+	}
+	completedToday := map[string]bool{}
+	if len(recurringIDs) > 0 {
+		crows, err := s.db.Query(ctx, `
+			select task_id from task_completions
+			where task_id = any($1::uuid[]) and occurrence_date = $2`,
+			recurringIDs, todayStr,
+		)
+		if err != nil {
+			return nil, err
+		}
+		for crows.Next() {
+			var taskID string
+			if err := crows.Scan(&taskID); err != nil {
+				crows.Close()
+				return nil, err
+			}
+			completedToday[taskID] = true
+		}
+		crows.Close()
+		if err := crows.Err(); err != nil {
+			return nil, err
+		}
+	}
+
 	var out []ReminderCandidate
 	for _, t := range tasks {
 		occDate := todayStr
 		if t.RecurrenceType == "none" {
-			if t.DueDate == nil {
+			if t.DueDate == nil || t.Completed {
 				continue
 			}
 			occDate = *t.DueDate
@@ -566,7 +617,7 @@ func (s *Store) DueReminders(ctx context.Context, now time.Time) ([]ReminderCand
 					anchor = &a
 				}
 			}
-			if !occursOn(t, anchor, today) {
+			if !occursOn(t, anchor, today) || completedToday[t.ID] {
 				continue
 			}
 		}

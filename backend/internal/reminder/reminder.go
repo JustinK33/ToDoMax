@@ -41,9 +41,26 @@ func (r *Runner) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			r.tick(ctx)
+			r.safeTick(ctx)
 		}
 	}
+}
+
+// safeTick isolates a single tick: a panic here (e.g. an unexpected driver
+// error) would otherwise take down the whole process, since this runs in the
+// same process as the HTTP server, not a separate worker. A per-tick timeout
+// also keeps a hung DB query or a stalled Resend call from freezing every
+// reminder for the rest of the process's life - ticker.C drops missed ticks
+// while the receiver is busy, so an unbounded tick() never gets unstuck.
+func (r *Runner) safeTick(ctx context.Context) {
+	defer func() {
+		if p := recover(); p != nil {
+			log.Printf("reminder: tick panicked: %v", p)
+		}
+	}()
+	tickCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	r.tick(tickCtx)
 }
 
 func (r *Runner) tick(ctx context.Context) {
