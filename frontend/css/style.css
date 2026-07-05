@@ -43,6 +43,26 @@ header h1 {
   margin: 0;
 }
 
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.brand-mark {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+
+.brand-mark-lg {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  margin: 0 auto;
+  display: block;
+}
+
 button {
   font: inherit;
   color: var(--text);
@@ -210,6 +230,11 @@ main {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+.auth-page h1 {
+  text-align: center;
+  margin: 0 0 0.5rem;
 }
 
 .auth-page input {

@@ -11,12 +11,14 @@ import (
 
 	"github.com/justin/todomax/backend/internal/auth"
 	"github.com/justin/todomax/backend/internal/config"
+	"github.com/justin/todomax/backend/internal/task"
 )
 
 type Server struct {
 	cfg      config.Config
 	db       *pgxpool.Pool
 	authKeys keyfunc.Keyfunc
+	tasks    *task.Store
 	stop     context.CancelFunc
 }
 
@@ -39,7 +41,7 @@ func New() (*Server, error) {
 		return nil, err
 	}
 
-	return &Server{cfg: cfg, db: db, authKeys: authKeys, stop: cancel}, nil
+	return &Server{cfg: cfg, db: db, authKeys: authKeys, tasks: task.NewStore(db), stop: cancel}, nil
 }
 
 func (s *Server) Close() {
@@ -55,6 +57,13 @@ func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.Handle("GET /api/me", requireAuth(http.HandlerFunc(s.handleMe)))
+	mux.Handle("POST /api/tasks", requireAuth(http.HandlerFunc(s.handleCreateTask)))
+	mux.Handle("GET /api/tasks", requireAuth(http.HandlerFunc(s.handleListTasks)))
+	mux.Handle("GET /api/tasks/{id}", requireAuth(http.HandlerFunc(s.handleGetTask)))
+	mux.Handle("PUT /api/tasks/{id}", requireAuth(http.HandlerFunc(s.handleUpdateTask)))
+	mux.Handle("DELETE /api/tasks/{id}", requireAuth(http.HandlerFunc(s.handleDeleteTask)))
+	mux.Handle("POST /api/tasks/{id}/complete", requireAuth(http.HandlerFunc(s.handleCompleteTask)))
+	mux.Handle("POST /api/tasks/{id}/uncomplete", requireAuth(http.HandlerFunc(s.handleUncompleteTask)))
 	return s.cors(mux)
 }
 
