@@ -56,8 +56,17 @@
       </label>
       <div class="row">
         <label>Category
-          <input name="category" placeholder="e.g. health" />
+          <select id="category-input">
+            <option value="">No category</option>
+            <option>Health</option>
+            <option>Study</option>
+            <option>Fitness</option>
+            <option>Personal</option>
+            <option>Work</option>
+            <option value="__other">Other...</option>
+          </select>
         </label>
+        <input name="category_other" id="category-other" class="hidden" placeholder="Category name" maxlength="40" />
       </div>
       <div class="row">
         <label>Due date

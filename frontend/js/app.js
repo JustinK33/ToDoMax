@@ -17,17 +17,38 @@ const weekDaysEl = document.getElementById("week-days");
 const heroDateEl = document.getElementById("hero-date");
 const heroStatsEl = document.getElementById("hero-stats");
 const habitPresetsEl = document.getElementById("habit-presets");
+const categoryInput = document.getElementById("category-input");
+const categoryOther = document.getElementById("category-other");
+
+const PRESET_CATEGORIES = ["Health", "Study", "Fitness", "Personal", "Work"];
 
 const HABIT_PRESETS = [
-  { title: "Workout", category: "fitness", recurrence_type: "weekly", recurrence_days: [1, 2, 4, 6] },
-  { title: "Hit 10k steps", category: "fitness", recurrence_type: "daily" },
-  { title: "Eat enough protein", category: "nutrition", recurrence_type: "daily" },
-  { title: "Skincare", category: "self-care", recurrence_type: "daily" },
-  { title: "Exfoliate", category: "self-care", recurrence_type: "weekly", recurrence_days: [7] },
-  { title: "Cut nails", category: "self-care", recurrence_type: "weekly", recurrence_days: [7] },
-  { title: "Study", category: "growth", recurrence_type: "daily" },
-  { title: "Sleep routine", category: "wellness", recurrence_type: "daily" },
+  { title: "Workout", category: "Fitness", recurrence_type: "weekly", recurrence_days: [1, 2, 4, 6] },
+  { title: "Hit 10k steps", category: "Fitness", recurrence_type: "daily" },
+  { title: "Eat enough protein", category: "Health", recurrence_type: "daily" },
+  { title: "Skincare", category: "Personal", recurrence_type: "daily" },
+  { title: "Exfoliate", category: "Personal", recurrence_type: "weekly", recurrence_days: [7] },
+  { title: "Cut nails", category: "Personal", recurrence_type: "weekly", recurrence_days: [7] },
+  { title: "Study", category: "Study", recurrence_type: "daily" },
+  { title: "Sleep routine", category: "Health", recurrence_type: "daily" },
 ];
+
+function setCategoryValue(cat) {
+  const match = cat && PRESET_CATEGORIES.find((p) => p.toLowerCase() === cat.toLowerCase());
+  categoryInput.value = match || (cat ? "__other" : "");
+  categoryOther.value = match ? "" : cat ?? "";
+  categoryOther.classList.toggle("hidden", categoryInput.value !== "__other");
+}
+
+function getCategoryValue() {
+  if (categoryInput.value === "__other") return categoryOther.value.trim() || null;
+  return categoryInput.value || null;
+}
+
+categoryInput.addEventListener("change", () => {
+  categoryOther.classList.toggle("hidden", categoryInput.value !== "__other");
+  if (categoryInput.value === "__other") categoryOther.focus();
+});
 
 let editingId = null;
 let currentTasks = [];
@@ -265,7 +286,7 @@ function openModal(task) {
   modalTitle.textContent = editingId ? "Edit task" : "New task";
   form.title.value = task?.title ?? "";
   form.notes.value = task?.notes ?? "";
-  form.category.value = task?.category ?? "";
+  setCategoryValue(task?.category ?? null);
   form.due_date.value = task?.due_date ?? "";
   form.due_time.value = task?.due_time?.slice(0, 5) ?? "";
   recurrenceType.value = task?.recurrence_type ?? "none";
@@ -291,6 +312,7 @@ function closeModal() {
   setSelectedDays([]);
   updateRecurrenceDaysVisibility();
   setReminderMinutes(null);
+  setCategoryValue(null);
 }
 
 habitPresetsEl.addEventListener("click", (e) => {
@@ -298,7 +320,7 @@ habitPresetsEl.addEventListener("click", (e) => {
   if (!btn) return;
   const preset = HABIT_PRESETS[Number(btn.dataset.preset)];
   form.title.value = preset.title;
-  form.category.value = preset.category;
+  setCategoryValue(preset.category);
   recurrenceType.value = preset.recurrence_type;
   setSelectedDays(preset.recurrence_days ?? []);
   updateRecurrenceDaysVisibility();
@@ -335,7 +357,7 @@ form.addEventListener("submit", async (e) => {
   const payload = {
     title: form.title.value.trim(),
     notes: form.notes.value.trim() || null,
-    category: form.category.value.trim() || null,
+    category: getCategoryValue(),
     due_date: form.due_date.value || null,
     due_time: form.due_time.value || null,
     recurrence_type: recurrenceType.value,
