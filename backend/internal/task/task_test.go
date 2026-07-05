@@ -345,6 +345,33 @@ func TestOccurrenceCarriesReminderField(t *testing.T) {
 	}
 }
 
+func TestRejectsNegativeReminderMinutes(t *testing.T) {
+	store, userID := newTestStore(t)
+	ctx := context.Background()
+	today := "2026-07-08"
+
+	_, err := store.Create(ctx, userID, Input{
+		Title: "bad reminder", DueDate: &today, DueTime: strPtr("09:00"), ReminderMinutesBefore: minutesPtr(-5),
+	})
+	var invalid ErrInvalidInput
+	if !errors.As(err, &invalid) {
+		t.Fatalf("Create with negative reminder_minutes_before: expected ErrInvalidInput, got %v", err)
+	}
+
+	valid, err := store.Create(ctx, userID, Input{
+		Title: "ok reminder", DueDate: &today, DueTime: strPtr("09:00"), ReminderMinutesBefore: minutesPtr(5),
+	})
+	if err != nil {
+		t.Fatalf("Create with valid reminder failed: %v", err)
+	}
+	_, err = store.Update(ctx, userID, valid.ID, Input{
+		Title: "ok reminder", DueDate: &today, DueTime: strPtr("09:00"), ReminderMinutesBefore: minutesPtr(-1),
+	})
+	if !errors.As(err, &invalid) {
+		t.Fatalf("Update with negative reminder_minutes_before: expected ErrInvalidInput, got %v", err)
+	}
+}
+
 func TestDueReminders(t *testing.T) {
 	store, userID := newTestStore(t)
 	ctx := context.Background()
