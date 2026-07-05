@@ -13,6 +13,9 @@ const recurrenceDays = document.getElementById("recurrence-days");
 const reminderPreset = document.getElementById("reminder-preset");
 const reminderCustom = document.getElementById("reminder-custom");
 const weekSummaryEl = document.getElementById("week-summary");
+const weekDaysEl = document.getElementById("week-days");
+const heroDateEl = document.getElementById("hero-date");
+const heroStatsEl = document.getElementById("hero-stats");
 const habitPresetsEl = document.getElementById("habit-presets");
 
 const HABIT_PRESETS = [
@@ -28,7 +31,20 @@ const HABIT_PRESETS = [
 
 let editingId = null;
 let currentTasks = [];
-const state = { view: "today", category: "" };
+const state = { view: "today", category: "", weekDay: null };
+
+function localDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function mondayOf(d) {
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return monday;
+}
 
 function escapeHtml(s) {
   const div = document.createElement("div");
@@ -57,12 +73,74 @@ function renderTasks(tasks) {
   }
 }
 
+function renderWeekStrip(occurrences) {
+  const todayStr = localDateStr(new Date());
+  const monday = mondayOf(new Date());
+  const byDate = {};
+  for (const o of occurrences) {
+    (byDate[o.due_date] ??= []).push(o);
+  }
+  const dows = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  weekDaysEl.innerHTML = dows
+    .map((dow, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const dateStr = localDateStr(d);
+      const dayTasks = byDate[dateStr] ?? [];
+      const done = dayTasks.filter((t) => t.completed).length;
+      const classes = [dateStr === todayStr ? "today" : "", dateStr === state.weekDay ? "selected" : ""].filter(Boolean).join(" ");
+      return `<button type="button" class="${classes}" data-date="${dateStr}">
+        <span class="dow">${dow}</span>
+        <span class="num">${d.getDate()}</span>
+        <span class="count">${dayTasks.length ? `${done}/${dayTasks.length}` : "-"}</span>
+      </button>`;
+    })
+    .join("");
+  weekDaysEl.classList.remove("hidden");
+}
+
+weekDaysEl.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-date]");
+  if (!btn) return;
+  state.weekDay = state.weekDay === btn.dataset.date ? null : btn.dataset.date;
+  renderWeekStrip(currentTasks);
+  renderTasks(state.weekDay ? currentTasks.filter((t) => t.due_date === state.weekDay) : currentTasks);
+});
+
 async function loadTasks() {
   const params = new URLSearchParams({ view: state.view });
   if (state.category) params.set("category", state.category);
   currentTasks = await apiFetch(`/api/tasks?${params}`);
-  renderTasks(currentTasks);
+  if (state.view === "week") {
+    renderWeekStrip(currentTasks);
+    renderTasks(state.weekDay ? currentTasks.filter((t) => t.due_date === state.weekDay) : currentTasks);
+  } else {
+    weekDaysEl.classList.add("hidden");
+    renderTasks(currentTasks);
+  }
 }
+
+async function refreshHero() {
+  heroDateEl.textContent = new Date().toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+  const [today, overdue] = await Promise.all([apiFetch("/api/tasks?view=today"), apiFetch("/api/tasks?view=overdue")]);
+  const done = today.filter((t) => t.completed).length;
+  const overduePill = overdue.length
+    ? `<button type="button" class="overdue-pill" id="hero-overdue">${overdue.length} overdue</button>`
+    : "";
+  heroStatsEl.innerHTML = `<span>${done}/${today.length} done today</span>${overduePill}`;
+}
+
+heroStatsEl.addEventListener("click", (e) => {
+  if (e.target.id !== "hero-overdue") return;
+  state.view = "overdue";
+  state.weekDay = null;
+  for (const b of viewTabs.querySelectorAll("button")) b.classList.toggle("active", b.dataset.view === "overdue");
+  loadTasks();
+});
 
 async function refreshCategories() {
   const all = await apiFetch("/api/tasks?view=all");
@@ -99,6 +177,7 @@ viewTabs.addEventListener("click", async (e) => {
   const btn = e.target.closest("button[data-view]");
   if (!btn) return;
   state.view = btn.dataset.view;
+  state.weekDay = null;
   for (const b of viewTabs.querySelectorAll("button")) {
     b.classList.toggle("active", b === btn);
   }
@@ -226,6 +305,7 @@ listEl.addEventListener("click", async (e) => {
     await apiFetch(`/api/tasks/${id}/${action}`, { method: "POST", body });
     await loadTasks();
     await refreshWeekSummary();
+    await refreshHero();
     return;
   }
 
@@ -267,6 +347,7 @@ form.addEventListener("submit", async (e) => {
   await loadTasks();
   await refreshCategories();
   await refreshWeekSummary();
+  await refreshHero();
 });
 
 deleteBtn.addEventListener("click", async () => {
@@ -276,8 +357,10 @@ deleteBtn.addEventListener("click", async () => {
   await loadTasks();
   await refreshCategories();
   await refreshWeekSummary();
+  await refreshHero();
 });
 
 await loadTasks();
 await refreshCategories();
 await refreshWeekSummary();
+await refreshHero();

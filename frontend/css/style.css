@@ -267,6 +267,74 @@ main {
   color: var(--text-dim);
 }
 
+.hero {
+  padding: 1.25rem 1rem 0.5rem;
+  text-align: center;
+}
+
+.hero-date {
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+
+.hero-stats {
+  margin-top: 0.4rem;
+  color: var(--text-dim);
+  font-size: 0.95rem;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.hero-stats .overdue-pill {
+  background: none;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.week-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.35rem;
+  margin: 0.5rem 1rem 0;
+}
+
+.week-days button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.5rem 0.2rem;
+  background: var(--surface);
+}
+
+.week-days button.today {
+  border-color: var(--accent);
+}
+
+.week-days button.selected {
+  background: var(--accent);
+  color: #0b0b0d;
+}
+
+.week-days .dow {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+
+.week-days button.selected .dow {
+  color: #0b0b0d;
+}
+
+.week-days .count {
+  font-size: 0.75rem;
+}
+
 .week-summary {
   margin: 0.5rem 1rem 0;
   padding: 0.75rem;

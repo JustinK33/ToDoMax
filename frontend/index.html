@@ -19,6 +19,10 @@
       </div>
       <button id="logout">Log out</button>
     </header>
+    <section class="hero">
+      <div class="hero-date" id="hero-date"></div>
+      <div class="hero-stats" id="hero-stats"></div>
+    </section>
     <nav class="tabs" id="view-tabs">
       <button data-view="today" class="active">Today</button>
       <button data-view="week">Week</button>
@@ -32,6 +36,7 @@
       </select>
     </div>
     <div id="week-summary" class="week-summary hidden"></div>
+    <div id="week-days" class="week-days hidden"></div>
     <main>
       <p id="empty-state" class="empty-state hidden">No tasks yet. Tap + to add one.</p>
       <ul id="task-list" class="task-list"></ul>
