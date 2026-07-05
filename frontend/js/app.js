@@ -253,6 +253,10 @@ form.addEventListener("submit", async (e) => {
     alert("Pick at least one day for a weekly repeat.");
     return;
   }
+  if (payload.reminder_minutes_before != null && !payload.due_time) {
+    alert("Add a due time to use a reminder - without one there's no specific moment to count back from.");
+    return;
+  }
 
   if (editingId) {
     await apiFetch(`/api/tasks/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
