@@ -218,6 +218,22 @@ main {
   flex: 1;
 }
 
+.task-manage {
+  cursor: pointer;
+  align-items: center;
+}
+
+.task-manage:hover {
+  background: var(--surface-2);
+}
+
+.task-manage .chevron {
+  color: var(--text-dim);
+  font-size: 1.2rem;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 .empty-state {
   text-align: center;
   color: var(--text-dim);
@@ -465,4 +481,10 @@ main {
 
 .error.info {
   color: var(--accent);
+}
+
+@media (min-width: 900px) {
+  .app {
+    max-width: 840px;
+  }
 }

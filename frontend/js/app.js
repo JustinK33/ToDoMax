@@ -135,11 +135,36 @@ function taskRow(t, { showCategory }) {
   return li;
 }
 
+// "All" manages task templates, not daily completions - a recurring task
+// has no meaningful template-level "done" state, only its per-day
+// occurrences do (see server-side comments in handleListTasks). So this
+// view gets an edit-oriented row (no checkbox, tap anywhere to open the
+// edit modal) instead of the mark-off checkbox row used everywhere else.
+function taskRowManage(t, { showCategory }) {
+  const li = document.createElement("li");
+  li.className = "task task-manage";
+  li.dataset.id = t.id;
+
+  const due = [t.due_date, t.due_time?.slice(0, 5)].filter(Boolean).join(" ");
+  const recurLabel = t.recurrence_type === "daily" ? "daily" : t.recurrence_type === "weekly" ? "weekly" : "";
+  const metaParts = [due, showCategory ? canonicalCategory(t.category) : null, recurLabel].filter(Boolean);
+  li.innerHTML = `
+    <div class="body">
+      <div class="title">${escapeHtml(t.title)}</div>
+      ${metaParts.length ? `<div class="meta">${metaParts.map(escapeHtml).join(" · ")}</div>` : ""}
+    </div>
+    <span class="chevron" aria-hidden="true">&rsaquo;</span>
+  `;
+  return li;
+}
+
 function renderTasks(tasks) {
   listEl.innerHTML = "";
   emptyEl.textContent = emptyMessage();
   emptyEl.classList.toggle("hidden", tasks.length > 0);
   if (tasks.length === 0) return;
+
+  const rowFn = state.view === "all" ? taskRowManage : taskRow;
 
   // Keyed by canonical category or null (uncategorized) - kept distinct from
   // any literal "Other" a user might type into the custom-category field.
@@ -151,7 +176,7 @@ function renderTasks(tasks) {
   }
 
   if (groups.size <= 1) {
-    for (const t of tasks) listEl.appendChild(taskRow(t, { showCategory: true }));
+    for (const t of tasks) listEl.appendChild(rowFn(t, { showCategory: true }));
     return;
   }
 
@@ -176,7 +201,7 @@ function renderTasks(tasks) {
     header.innerHTML = `<span class="cat-dot"></span><span class="cat-name">${escapeHtml(label)}</span><span class="cat-count">${done}/${groupTasks.length}</span>`;
     const sublist = document.createElement("ul");
     sublist.className = "task-group-list";
-    for (const t of groupTasks) sublist.appendChild(taskRow(t, { showCategory: false }));
+    for (const t of groupTasks) sublist.appendChild(rowFn(t, { showCategory: false }));
     group.append(header, sublist);
     listEl.appendChild(group);
   }
@@ -444,6 +469,13 @@ async function refreshView({ categories = false } = {}) {
 }
 
 listEl.addEventListener("click", async (e) => {
+  const manageRow = e.target.closest(".task-manage");
+  if (manageRow) {
+    const task = currentTasks.find((t) => t.id === manageRow.dataset.id);
+    if (task) openModal(task);
+    return;
+  }
+
   const checkbox = e.target.closest(".toggle");
   if (checkbox) {
     const id = checkbox.dataset.id;
