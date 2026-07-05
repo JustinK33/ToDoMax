@@ -11,6 +11,7 @@ import (
 
 	"github.com/justin/todomax/backend/internal/auth"
 	"github.com/justin/todomax/backend/internal/config"
+	"github.com/justin/todomax/backend/internal/goal"
 	"github.com/justin/todomax/backend/internal/reminder"
 	"github.com/justin/todomax/backend/internal/task"
 )
@@ -20,6 +21,7 @@ type Server struct {
 	db       *pgxpool.Pool
 	authKeys keyfunc.Keyfunc
 	tasks    *task.Store
+	goals    *goal.Store
 	stop     context.CancelFunc
 }
 
@@ -43,6 +45,7 @@ func New() (*Server, error) {
 	}
 
 	tasks := task.NewStore(db)
+	goals := goal.NewStore(db)
 
 	if db != nil {
 		reminderRunner := reminder.New(tasks, reminder.Config{
@@ -53,7 +56,7 @@ func New() (*Server, error) {
 		go reminderRunner.Run(ctx)
 	}
 
-	return &Server{cfg: cfg, db: db, authKeys: authKeys, tasks: tasks, stop: cancel}, nil
+	return &Server{cfg: cfg, db: db, authKeys: authKeys, tasks: tasks, goals: goals, stop: cancel}, nil
 }
 
 func (s *Server) Close() {
@@ -77,6 +80,15 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/tasks/{id}/complete", requireAuth(http.HandlerFunc(s.handleCompleteTask)))
 	mux.Handle("POST /api/tasks/{id}/uncomplete", requireAuth(http.HandlerFunc(s.handleUncompleteTask)))
 	mux.Handle("GET /api/summary/week", requireAuth(http.HandlerFunc(s.handleWeekSummary)))
+
+	mux.Handle("POST /api/goals", requireAuth(http.HandlerFunc(s.handleCreateGoal)))
+	mux.Handle("GET /api/goals", requireAuth(http.HandlerFunc(s.handleListGoals)))
+	mux.Handle("GET /api/goals/{id}", requireAuth(http.HandlerFunc(s.handleGetGoal)))
+	mux.Handle("PUT /api/goals/{id}", requireAuth(http.HandlerFunc(s.handleUpdateGoal)))
+	mux.Handle("DELETE /api/goals/{id}", requireAuth(http.HandlerFunc(s.handleDeleteGoal)))
+	mux.Handle("POST /api/goals/{id}/complete", requireAuth(http.HandlerFunc(s.handleCompleteGoal)))
+	mux.Handle("POST /api/goals/{id}/uncomplete", requireAuth(http.HandlerFunc(s.handleUncompleteGoal)))
+
 	return s.cors(mux)
 }
 

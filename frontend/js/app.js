@@ -1,4 +1,5 @@
 import { apiFetch } from "./api.js";
+import { escapeHtml } from "./dom-utils.js";
 
 const listEl = document.getElementById("task-list");
 const emptyEl = document.getElementById("empty-state");
@@ -76,12 +77,6 @@ function mondayOf(d) {
   const monday = new Date(d);
   monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
   return monday;
-}
-
-function escapeHtml(s) {
-  const div = document.createElement("div");
-  div.textContent = s;
-  return div.innerHTML;
 }
 
 const EMPTY_MESSAGES = {

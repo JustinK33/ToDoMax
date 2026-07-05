@@ -49,6 +49,32 @@ header h1 {
   gap: 0.5rem;
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.header-nav {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.icon-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  text-decoration: none;
+}
+
+.icon-link.active {
+  background: var(--surface-2);
+}
+
 .brand-mark {
   width: 24px;
   height: 24px;
