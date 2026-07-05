@@ -8,6 +8,8 @@ const deleteBtn = document.getElementById("delete-task");
 const modalTitle = document.getElementById("modal-title");
 const viewTabs = document.getElementById("view-tabs");
 const categorySelect = document.getElementById("category-select");
+const recurrenceType = document.getElementById("recurrence-type");
+const recurrenceDays = document.getElementById("recurrence-days");
 
 let editingId = null;
 let currentTasks = [];
@@ -28,11 +30,12 @@ function renderTasks(tasks) {
     li.className = "task" + (t.completed ? " done" : "");
 
     const due = [t.due_date, t.due_time?.slice(0, 5)].filter(Boolean).join(" ");
+    const recurLabel = t.recurrence_type === "daily" ? "daily" : t.recurrence_type === "weekly" ? "weekly" : "";
     li.innerHTML = `
-      <input type="checkbox" ${t.completed ? "checked" : ""} data-id="${t.id}" class="toggle" />
+      <input type="checkbox" ${t.completed ? "checked" : ""} data-id="${t.id}" data-date="${t.due_date ?? ""}" class="toggle" />
       <div class="body" data-id="${t.id}">
         <div class="title">${escapeHtml(t.title)}</div>
-        ${due || t.category ? `<div class="meta">${[due, t.category].filter(Boolean).map(escapeHtml).join(" · ")}</div>` : ""}
+        ${due || t.category || recurLabel ? `<div class="meta">${[due, t.category, recurLabel].filter(Boolean).map(escapeHtml).join(" · ")}</div>` : ""}
       </div>
     `;
     listEl.appendChild(li);
@@ -75,6 +78,35 @@ categorySelect.addEventListener("change", async () => {
   await loadTasks();
 });
 
+function setSelectedDays(days) {
+  for (const btn of recurrenceDays.querySelectorAll("button[data-day]")) {
+    btn.classList.toggle("active", days.includes(Number(btn.dataset.day)));
+  }
+}
+
+function getSelectedDays() {
+  return [...recurrenceDays.querySelectorAll("button[data-day].active")].map((b) => Number(b.dataset.day));
+}
+
+function updateRecurrenceDaysVisibility() {
+  recurrenceDays.classList.toggle("hidden", recurrenceType.value !== "weekly");
+}
+
+recurrenceType.addEventListener("change", updateRecurrenceDaysVisibility);
+
+recurrenceDays.addEventListener("click", (e) => {
+  const dayBtn = e.target.closest("button[data-day]");
+  if (dayBtn) {
+    dayBtn.classList.toggle("active");
+    return;
+  }
+  if (e.target.id === "preset-weekdays") {
+    recurrenceType.value = "weekly";
+    updateRecurrenceDaysVisibility();
+    setSelectedDays([1, 2, 3, 4, 5]);
+  }
+});
+
 function openModal(task) {
   editingId = task?.id ?? null;
   modalTitle.textContent = editingId ? "Edit task" : "New task";
@@ -83,6 +115,9 @@ function openModal(task) {
   form.category.value = task?.category ?? "";
   form.due_date.value = task?.due_date ?? "";
   form.due_time.value = task?.due_time?.slice(0, 5) ?? "";
+  recurrenceType.value = task?.recurrence_type ?? "none";
+  setSelectedDays(task?.recurrence_days ?? []);
+  updateRecurrenceDaysVisibility();
   deleteBtn.classList.toggle("hidden", !editingId);
   modalBackdrop.classList.remove("hidden");
 }
@@ -91,6 +126,8 @@ function closeModal() {
   modalBackdrop.classList.add("hidden");
   editingId = null;
   form.reset();
+  setSelectedDays([]);
+  updateRecurrenceDaysVisibility();
 }
 
 document.getElementById("new-task").addEventListener("click", () => openModal(null));
@@ -104,7 +141,8 @@ listEl.addEventListener("click", async (e) => {
   if (checkbox) {
     const id = checkbox.dataset.id;
     const action = checkbox.checked ? "complete" : "uncomplete";
-    await apiFetch(`/api/tasks/${id}/${action}`, { method: "POST" });
+    const body = checkbox.dataset.date ? JSON.stringify({ occurrence_date: checkbox.dataset.date }) : undefined;
+    await apiFetch(`/api/tasks/${id}/${action}`, { method: "POST", body });
     await loadTasks();
     return;
   }
@@ -124,8 +162,14 @@ form.addEventListener("submit", async (e) => {
     category: form.category.value.trim() || null,
     due_date: form.due_date.value || null,
     due_time: form.due_time.value || null,
+    recurrence_type: recurrenceType.value,
+    recurrence_days: recurrenceType.value === "weekly" ? getSelectedDays() : [],
   };
   if (!payload.title) return;
+  if (payload.recurrence_type === "weekly" && payload.recurrence_days.length === 0) {
+    alert("Pick at least one day for a weekly repeat.");
+    return;
+  }
 
   if (editingId) {
     await apiFetch(`/api/tasks/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });

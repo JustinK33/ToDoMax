@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -198,6 +199,111 @@ func TestListViews(t *testing.T) {
 		}
 		if len(got) != 1 || got[0].ID != created.ID {
 			t.Fatalf("expected only the categorized task, got %v", titles(got))
+		}
+	})
+}
+
+func TestRecurringOccurrences(t *testing.T) {
+	store, userID := newTestStore(t)
+	ctx := context.Background()
+
+	now := time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)
+	for now.Weekday() != time.Wednesday {
+		now = now.AddDate(0, 0, 1)
+	}
+	monday := mondayOf(now)
+	todayStr := now.Format("2006-01-02")
+
+	daily, err := store.Create(ctx, userID, Input{Title: "daily habit", RecurrenceType: "daily"})
+	if err != nil {
+		t.Fatalf("Create daily failed: %v", err)
+	}
+
+	// Monday(1) and Saturday(6): matches this week's Monday and Saturday only.
+	weekly, err := store.Create(ctx, userID, Input{Title: "gym", RecurrenceType: "weekly", RecurrenceDays: []int{1, 6}})
+	if err != nil {
+		t.Fatalf("Create weekly failed: %v", err)
+	}
+
+	t.Run("weekly recurrence requires days", func(t *testing.T) {
+		_, err := store.Create(ctx, userID, Input{Title: "bad", RecurrenceType: "weekly"})
+		var invalid ErrInvalidInput
+		if !errors.As(err, &invalid) {
+			t.Fatalf("expected ErrInvalidInput, got %v", err)
+		}
+	})
+
+	t.Run("daily appears today and rest of week", func(t *testing.T) {
+		today, err := store.ListOccurrences(ctx, userID, Filter{View: "today", Now: now})
+		if err != nil {
+			t.Fatalf("ListOccurrences(today) failed: %v", err)
+		}
+		if len(today) != 1 || today[0].TaskID != daily.ID || today[0].DueDate != todayStr {
+			t.Fatalf("expected daily habit today, got %+v", today)
+		}
+	})
+
+	t.Run("weekly only matches its configured days", func(t *testing.T) {
+		week, err := store.ListOccurrences(ctx, userID, Filter{View: "week", Now: now})
+		if err != nil {
+			t.Fatalf("ListOccurrences(week) failed: %v", err)
+		}
+		gymDates := map[string]bool{}
+		for _, occ := range week {
+			if occ.TaskID == weekly.ID {
+				gymDates[occ.DueDate] = true
+			}
+		}
+		wantMonday := monday.Format("2006-01-02")
+		wantSaturday := monday.AddDate(0, 0, 5).Format("2006-01-02")
+		if len(gymDates) != 2 || !gymDates[wantMonday] || !gymDates[wantSaturday] {
+			t.Fatalf("expected gym on %s and %s, got %v", wantMonday, wantSaturday, gymDates)
+		}
+	})
+
+	t.Run("recurring tasks are never overdue", func(t *testing.T) {
+		overdue, err := store.List(ctx, userID, Filter{View: "overdue", Now: now})
+		if err != nil {
+			t.Fatalf("List(overdue) failed: %v", err)
+		}
+		for _, tk := range overdue {
+			if tk.ID == daily.ID || tk.ID == weekly.ID {
+				t.Fatalf("recurring task %s should never appear in overdue", tk.Title)
+			}
+		}
+	})
+
+	t.Run("completing one occurrence does not affect other days", func(t *testing.T) {
+		if _, err := store.SetOccurrenceCompleted(ctx, userID, daily.ID, todayStr, true); err != nil {
+			t.Fatalf("SetOccurrenceCompleted failed: %v", err)
+		}
+
+		today, err := store.ListOccurrences(ctx, userID, Filter{View: "today", Now: now})
+		if err != nil {
+			t.Fatalf("ListOccurrences(today) failed: %v", err)
+		}
+		if len(today) != 1 || !today[0].Completed {
+			t.Fatalf("expected today's daily occurrence completed, got %+v", today)
+		}
+
+		tomorrow := now.AddDate(0, 0, 1)
+		nextDay, err := store.ListOccurrences(ctx, userID, Filter{View: "today", Now: tomorrow})
+		if err != nil {
+			t.Fatalf("ListOccurrences(tomorrow) failed: %v", err)
+		}
+		if len(nextDay) != 1 || nextDay[0].Completed {
+			t.Fatalf("expected tomorrow's daily occurrence NOT completed, got %+v", nextDay)
+		}
+
+		if _, err := store.SetOccurrenceCompleted(ctx, userID, daily.ID, todayStr, false); err != nil {
+			t.Fatalf("un-complete failed: %v", err)
+		}
+		today, err = store.ListOccurrences(ctx, userID, Filter{View: "today", Now: now})
+		if err != nil {
+			t.Fatalf("ListOccurrences(today) failed: %v", err)
+		}
+		if len(today) != 1 || today[0].Completed {
+			t.Fatalf("expected today's occurrence un-completed again, got %+v", today)
 		}
 	})
 }

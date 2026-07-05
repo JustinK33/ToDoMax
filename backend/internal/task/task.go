@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -11,32 +12,53 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Task is the API-facing representation of a task. DueDate/DueTime use plain
-// strings ("2026-07-05" / "14:30:00") rather than time.Time so a task with no
-// time component doesn't need a fake one, and so JSON stays exactly what the
-// frontend sent.
+// Task is the API-facing representation of a task template. DueDate/DueTime
+// use plain strings ("2026-07-05" / "14:30:00") rather than time.Time so a
+// task with no time component doesn't need a fake one, and so JSON stays
+// exactly what the frontend sent. For a recurring task, DueDate is the
+// anchor date recurrence starts from, not "the" due date.
 type Task struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	Notes     *string   `json:"notes"`
-	Category  *string   `json:"category"`
-	DueDate   *string   `json:"due_date"`
-	DueTime   *string   `json:"due_time"`
-	Completed bool      `json:"completed"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID             string    `json:"id"`
+	Title          string    `json:"title"`
+	Notes          *string   `json:"notes"`
+	Category       *string   `json:"category"`
+	DueDate        *string   `json:"due_date"`
+	DueTime        *string   `json:"due_time"`
+	RecurrenceType string    `json:"recurrence_type"`
+	RecurrenceDays []int     `json:"recurrence_days,omitempty"`
+	Completed      bool      `json:"completed"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// Occurrence is a single day's instance of a task, as shown in the
+// today/week/upcoming views. For a non-recurring task there's exactly one
+// occurrence (its due date); for a recurring task, one per matching day.
+type Occurrence struct {
+	TaskID         string  `json:"id"`
+	Title          string  `json:"title"`
+	Notes          *string `json:"notes"`
+	Category       *string `json:"category"`
+	DueDate        string  `json:"due_date"`
+	DueTime        *string `json:"due_time"`
+	RecurrenceType string  `json:"recurrence_type"`
+	RecurrenceDays []int   `json:"recurrence_days,omitempty"`
+	Completed      bool    `json:"completed"`
 }
 
 // Input is the subset of Task fields a client may set on create/update.
 type Input struct {
-	Title    string  `json:"title"`
-	Notes    *string `json:"notes"`
-	Category *string `json:"category"`
-	DueDate  *string `json:"due_date"`
-	DueTime  *string `json:"due_time"`
+	Title          string  `json:"title"`
+	Notes          *string `json:"notes"`
+	Category       *string `json:"category"`
+	DueDate        *string `json:"due_date"`
+	DueTime        *string `json:"due_time"`
+	RecurrenceType string  `json:"recurrence_type"`
+	RecurrenceDays []int   `json:"recurrence_days"`
 }
 
-// ErrInvalidInput is returned when DueDate/DueTime don't parse.
+// ErrInvalidInput is returned when input fields don't parse or don't satisfy
+// a validation rule (e.g. weekly recurrence with no days given).
 type ErrInvalidInput struct{ Reason string }
 
 func (e ErrInvalidInput) Error() string { return e.Reason }
@@ -67,6 +89,33 @@ func parseTime(s *string) (pgtype.Time, error) {
 	return pgtype.Time{Microseconds: micros, Valid: true}, nil
 }
 
+// parseRecurrence validates recurrence_type/recurrence_days and converts the
+// days to the smallint width Postgres stores them as.
+func parseRecurrence(in Input) (string, []int16, error) {
+	rt := in.RecurrenceType
+	if rt == "" {
+		rt = "none"
+	}
+	switch rt {
+	case "none", "daily":
+		return rt, nil, nil
+	case "weekly":
+		if len(in.RecurrenceDays) == 0 {
+			return "", nil, ErrInvalidInput{"weekly recurrence requires recurrence_days"}
+		}
+		days := make([]int16, len(in.RecurrenceDays))
+		for i, d := range in.RecurrenceDays {
+			if d < 1 || d > 7 {
+				return "", nil, ErrInvalidInput{"recurrence_days must be 1-7 (ISO weekday, 1=Monday)"}
+			}
+			days[i] = int16(d)
+		}
+		return rt, days, nil
+	default:
+		return "", nil, ErrInvalidInput{"recurrence_type must be none, daily, or weekly"}
+	}
+}
+
 func formatDate(d pgtype.Date) *string {
 	if !d.Valid {
 		return nil
@@ -84,6 +133,17 @@ func formatTime(t pgtype.Time) *string {
 	return &s
 }
 
+func int16sToInts(in []int16) []int {
+	if in == nil {
+		return nil
+	}
+	out := make([]int, len(in))
+	for i, v := range in {
+		out[i] = int(v)
+	}
+	return out
+}
+
 type Store struct {
 	db *pgxpool.Pool
 }
@@ -92,15 +152,18 @@ func NewStore(db *pgxpool.Pool) *Store {
 	return &Store{db: db}
 }
 
-const taskColumns = "id, title, notes, category, due_date, due_time, completed, created_at, updated_at"
+const taskColumns = "id, title, notes, category, due_date, due_time, recurrence_type, recurrence_days, completed, created_at, updated_at"
 
 func scanTask(row pgx.Row) (Task, error) {
 	var t Task
 	var dueDate pgtype.Date
 	var dueTime pgtype.Time
-	err := row.Scan(&t.ID, &t.Title, &t.Notes, &t.Category, &dueDate, &dueTime, &t.Completed, &t.CreatedAt, &t.UpdatedAt)
+	var recurrenceDays []int16
+	err := row.Scan(&t.ID, &t.Title, &t.Notes, &t.Category, &dueDate, &dueTime,
+		&t.RecurrenceType, &recurrenceDays, &t.Completed, &t.CreatedAt, &t.UpdatedAt)
 	t.DueDate = formatDate(dueDate)
 	t.DueTime = formatTime(dueTime)
+	t.RecurrenceDays = int16sToInts(recurrenceDays)
 	return t, err
 }
 
@@ -113,17 +176,21 @@ func (s *Store) Create(ctx context.Context, userID string, in Input) (Task, erro
 	if err != nil {
 		return Task{}, err
 	}
+	recurrenceType, recurrenceDays, err := parseRecurrence(in)
+	if err != nil {
+		return Task{}, err
+	}
 
 	row := s.db.QueryRow(ctx, `
-		insert into tasks (user_id, title, notes, category, due_date, due_time)
-		values ($1, $2, $3, $4, $5, $6)
+		insert into tasks (user_id, title, notes, category, due_date, due_time, recurrence_type, recurrence_days)
+		values ($1, $2, $3, $4, $5, $6, $7, $8)
 		returning `+taskColumns,
-		userID, in.Title, in.Notes, in.Category, dueDate, dueTime,
+		userID, in.Title, in.Notes, in.Category, dueDate, dueTime, recurrenceType, recurrenceDays,
 	)
 	return scanTask(row)
 }
 
-// Filter selects which tasks List returns. View is one of
+// Filter selects which tasks List/ListOccurrences return. View is one of
 // "today"/"week"/"overdue"/"upcoming"/"all" (default "all" for zero value).
 // Now must be the caller's current time in the user's configured timezone,
 // so "today"/"week" boundaries land on the right calendar day.
@@ -138,6 +205,9 @@ func mondayOf(t time.Time) time.Time {
 	return t.AddDate(0, 0, -offset)
 }
 
+// List returns task templates - one row per task regardless of recurrence.
+// Used for the "all" management view and the overdue view (recurring tasks
+// never count as "overdue"; a missed recurring day just isn't shown as done).
 func (s *Store) List(ctx context.Context, userID string, f Filter) ([]Task, error) {
 	conditions := []string{"user_id = $1"}
 	args := []interface{}{userID}
@@ -155,7 +225,7 @@ func (s *Store) List(ctx context.Context, userID string, f Filter) ([]Task, erro
 		sunday := mondayOf(f.Now).AddDate(0, 0, 6).Format("2006-01-02")
 		conditions = append(conditions, "due_date between "+arg(monday)+" and "+arg(sunday))
 	case "overdue":
-		conditions = append(conditions, "due_date < "+arg(today)+" and completed = false")
+		conditions = append(conditions, "due_date < "+arg(today)+" and completed = false and recurrence_type = 'none'")
 	case "upcoming":
 		conditions = append(conditions, "due_date > "+arg(today))
 	}
@@ -184,6 +254,151 @@ func (s *Store) List(ctx context.Context, userID string, f Filter) ([]Task, erro
 	return tasks, rows.Err()
 }
 
+// occursOn reports whether a task's recurrence rule produces an occurrence
+// on date d (d and anchor are both midnight-normalized calendar dates).
+func occursOn(t Task, anchor *time.Time, d time.Time) bool {
+	if anchor != nil && d.Before(*anchor) {
+		return false
+	}
+	switch t.RecurrenceType {
+	case "daily":
+		return true
+	case "weekly":
+		iso := int(d.Weekday())
+		if iso == 0 {
+			iso = 7 // Go's Sunday=0 -> ISO 7
+		}
+		for _, day := range t.RecurrenceDays {
+			if day == iso {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ListOccurrences expands recurring tasks into per-day instances within the
+// view's date window, alongside non-recurring tasks whose due date falls in
+// that window. View must be "today", "week", or "upcoming" ("upcoming" looks
+// 30 days ahead - recurrence has no natural end date, so it needs a bound).
+func (s *Store) ListOccurrences(ctx context.Context, userID string, f Filter) ([]Occurrence, error) {
+	var start, end time.Time
+	switch f.View {
+	case "today":
+		start, end = f.Now, f.Now
+	case "week":
+		start = mondayOf(f.Now)
+		end = start.AddDate(0, 0, 6)
+	case "upcoming":
+		start = f.Now.AddDate(0, 0, 1)
+		end = f.Now.AddDate(0, 0, 30)
+	default:
+		start, end = f.Now, f.Now
+	}
+	start = time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.UTC)
+	end = time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, time.UTC)
+
+	conditions := []string{"user_id = $1", "(recurrence_type != 'none' or (due_date between $2 and $3))"}
+	args := []interface{}{userID, start.Format("2006-01-02"), end.Format("2006-01-02")}
+	if f.Category != "" {
+		args = append(args, f.Category)
+		conditions = append(conditions, fmt.Sprintf("category = $%d", len(args)))
+	}
+
+	rows, err := s.db.Query(ctx, `select `+taskColumns+` from tasks where `+strings.Join(conditions, " and "), args...)
+	if err != nil {
+		return nil, err
+	}
+	var tasks []Task
+	for rows.Next() {
+		t, err := scanTask(rows)
+		if err != nil {
+			rows.Close()
+			return nil, err
+		}
+		tasks = append(tasks, t)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	recurringIDs := make([]string, 0, len(tasks))
+	for _, t := range tasks {
+		if t.RecurrenceType != "none" {
+			recurringIDs = append(recurringIDs, t.ID)
+		}
+	}
+
+	completions := map[string]bool{} // "taskID|date" -> completed
+	if len(recurringIDs) > 0 {
+		crows, err := s.db.Query(ctx, `
+			select task_id, occurrence_date from task_completions
+			where task_id = any($1::uuid[]) and occurrence_date between $2 and $3`,
+			recurringIDs, start.Format("2006-01-02"), end.Format("2006-01-02"),
+		)
+		if err != nil {
+			return nil, err
+		}
+		for crows.Next() {
+			var taskID string
+			var occDate time.Time
+			if err := crows.Scan(&taskID, &occDate); err != nil {
+				crows.Close()
+				return nil, err
+			}
+			completions[taskID+"|"+occDate.Format("2006-01-02")] = true
+		}
+		crows.Close()
+		if err := crows.Err(); err != nil {
+			return nil, err
+		}
+	}
+
+	var out []Occurrence
+	for _, t := range tasks {
+		if t.RecurrenceType == "none" {
+			if t.DueDate == nil {
+				continue
+			}
+			out = append(out, Occurrence{
+				TaskID: t.ID, Title: t.Title, Notes: t.Notes, Category: t.Category,
+				DueDate: *t.DueDate, DueTime: t.DueTime, RecurrenceType: t.RecurrenceType,
+				Completed: t.Completed,
+			})
+			continue
+		}
+
+		var anchor *time.Time
+		if t.DueDate != nil {
+			a, err := time.Parse("2006-01-02", *t.DueDate)
+			if err == nil {
+				anchor = &a
+			}
+		}
+
+		for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+			if !occursOn(t, anchor, d) {
+				continue
+			}
+			dateStr := d.Format("2006-01-02")
+			out = append(out, Occurrence{
+				TaskID: t.ID, Title: t.Title, Notes: t.Notes, Category: t.Category,
+				DueDate: dateStr, DueTime: t.DueTime, RecurrenceType: t.RecurrenceType,
+				RecurrenceDays: t.RecurrenceDays, Completed: completions[t.ID+"|"+dateStr],
+			})
+		}
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].DueDate != out[j].DueDate {
+			return out[i].DueDate < out[j].DueDate
+		}
+		return out[i].Title < out[j].Title
+	})
+	return out, nil
+}
+
 func (s *Store) Get(ctx context.Context, userID, id string) (Task, error) {
 	row := s.db.QueryRow(ctx, `
 		select `+taskColumns+`
@@ -203,13 +418,18 @@ func (s *Store) Update(ctx context.Context, userID, id string, in Input) (Task, 
 	if err != nil {
 		return Task{}, err
 	}
+	recurrenceType, recurrenceDays, err := parseRecurrence(in)
+	if err != nil {
+		return Task{}, err
+	}
 
 	row := s.db.QueryRow(ctx, `
 		update tasks
-		set title = $3, notes = $4, category = $5, due_date = $6, due_time = $7, updated_at = now()
+		set title = $3, notes = $4, category = $5, due_date = $6, due_time = $7,
+		    recurrence_type = $8, recurrence_days = $9, updated_at = now()
 		where user_id = $1 and id = $2
 		returning `+taskColumns,
-		userID, id, in.Title, in.Notes, in.Category, dueDate, dueTime,
+		userID, id, in.Title, in.Notes, in.Category, dueDate, dueTime, recurrenceType, recurrenceDays,
 	)
 	return scanTask(row)
 }
@@ -234,4 +454,54 @@ func (s *Store) SetCompleted(ctx context.Context, userID, id string, completed b
 		userID, id, completed,
 	)
 	return scanTask(row)
+}
+
+// SetOccurrenceCompleted marks a single day complete/incomplete. For a
+// non-recurring task this is equivalent to SetCompleted (occurrenceDate is
+// ignored). For a recurring task it adds/removes a task_completions row for
+// that specific day, leaving other days' completion history untouched.
+func (s *Store) SetOccurrenceCompleted(ctx context.Context, userID, id, occurrenceDate string, completed bool) (Occurrence, error) {
+	t, err := s.Get(ctx, userID, id)
+	if err != nil {
+		return Occurrence{}, err
+	}
+
+	if t.RecurrenceType == "none" {
+		updated, err := s.SetCompleted(ctx, userID, id, completed)
+		if err != nil {
+			return Occurrence{}, err
+		}
+		date := occurrenceDate
+		if updated.DueDate != nil {
+			date = *updated.DueDate
+		}
+		return Occurrence{
+			TaskID: updated.ID, Title: updated.Title, Notes: updated.Notes, Category: updated.Category,
+			DueDate: date, DueTime: updated.DueTime, RecurrenceType: updated.RecurrenceType,
+			Completed: updated.Completed,
+		}, nil
+	}
+
+	if _, err := time.Parse("2006-01-02", occurrenceDate); err != nil {
+		return Occurrence{}, ErrInvalidInput{"occurrence_date must be YYYY-MM-DD"}
+	}
+
+	if completed {
+		_, err = s.db.Exec(ctx, `
+			insert into task_completions (task_id, occurrence_date) values ($1, $2)
+			on conflict (task_id, occurrence_date) do nothing`,
+			id, occurrenceDate,
+		)
+	} else {
+		_, err = s.db.Exec(ctx, `delete from task_completions where task_id = $1 and occurrence_date = $2`, id, occurrenceDate)
+	}
+	if err != nil {
+		return Occurrence{}, err
+	}
+
+	return Occurrence{
+		TaskID: t.ID, Title: t.Title, Notes: t.Notes, Category: t.Category,
+		DueDate: occurrenceDate, DueTime: t.DueTime, RecurrenceType: t.RecurrenceType,
+		RecurrenceDays: t.RecurrenceDays, Completed: completed,
+	}, nil
 }

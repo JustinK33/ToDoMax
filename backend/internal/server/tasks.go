@@ -63,15 +63,31 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 		Now:      time.Now().In(s.cfg.Location),
 	}
 
-	tasks, err := s.tasks.List(r.Context(), userID, filter)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
+	// today/week/upcoming expand recurring tasks into per-day occurrences;
+	// overdue/all/"" list task templates (a recurring task is never itself
+	// "overdue", and the All tab manages the templates, not their instances).
+	switch filter.View {
+	case "today", "week", "upcoming":
+		occurrences, err := s.tasks.ListOccurrences(r.Context(), userID, filter)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if occurrences == nil {
+			occurrences = []task.Occurrence{}
+		}
+		writeJSON(w, http.StatusOK, occurrences)
+	default:
+		tasks, err := s.tasks.List(r.Context(), userID, filter)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if tasks == nil {
+			tasks = []task.Task{}
+		}
+		writeJSON(w, http.StatusOK, tasks)
 	}
-	if tasks == nil {
-		tasks = []task.Task{}
-	}
-	writeJSON(w, http.StatusOK, tasks)
 }
 
 func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
@@ -131,10 +147,20 @@ func (s *Server) setCompleted(w http.ResponseWriter, r *http.Request, completed 
 	userID, _ := auth.UserID(r.Context())
 	id := r.PathValue("id")
 
-	t, err := s.tasks.SetCompleted(r.Context(), userID, id, completed)
+	var body struct {
+		OccurrenceDate string `json:"occurrence_date"`
+	}
+	json.NewDecoder(r.Body).Decode(&body) // no body sent = zero value, defaulted below
+
+	occurrenceDate := body.OccurrenceDate
+	if occurrenceDate == "" {
+		occurrenceDate = time.Now().In(s.cfg.Location).Format("2006-01-02")
+	}
+
+	occ, err := s.tasks.SetOccurrenceCompleted(r.Context(), userID, id, occurrenceDate, completed)
 	if err != nil {
 		writeErr(w, taskErrStatus(err), "task not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, t)
+	writeJSON(w, http.StatusOK, occ)
 }
