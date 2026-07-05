@@ -23,6 +23,25 @@ cd backend && go run ./cmd/server
 Serve `frontend/` with any static file server (e.g. `npx serve frontend`) and
 open it in a browser.
 
+### Docker Compose (alternative to the manual steps above)
+
+Runs the backend and frontend as containers instead of `go run` / a manual
+static server. The database/auth stack is still `supabase start` - it
+already manages its own containers, so compose only covers the two pieces
+that otherwise need manual commands:
+
+```bash
+supabase start
+docker compose up --build
+```
+
+Then open `http://localhost:8090`. The frontend container serves
+`frontend/` with `js/config.docker.js` mounted over `js/config.js`, pointed
+at `localhost:8080` (backend) and `localhost:54321` (local Supabase) - the
+real `frontend/js/config.js` (pointed at production) is untouched. The
+backend container reaches the `supabase start` stack via
+`host.docker.internal`.
+
 ### Reminders
 
 The backend ticks every minute and emails a reminder shortly before a task's

@@ -1,0 +1,28 @@
+# Local app-layer testing only - the database/auth stack is still run
+# separately via `supabase start` (it manages its own containers already).
+# Usage:
+#   supabase start
+#   docker compose up --build
+#   open http://localhost:8090
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgresql://postgres:postgres@host.docker.internal:54322/postgres
+      SUPABASE_URL: http://host.docker.internal:54321
+      FRONTEND_ORIGINS: http://localhost:8090
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  frontend:
+    image: nginx:alpine
+    ports:
+      - "8090:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./frontend/js/config.docker.js:/usr/share/nginx/html/js/config.js:ro
+    depends_on:
+      - backend
