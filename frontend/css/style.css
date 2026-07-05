@@ -101,7 +101,7 @@ nav.tabs {
 nav.tabs button {
   flex: none;
   background: transparent;
-  border: none;
+  border: 1px solid var(--border);
   color: var(--text-dim);
   padding: 0.5rem 0.75rem;
 }
@@ -141,14 +141,28 @@ main {
   margin-bottom: 0.5rem;
 }
 
-.task-group-header .cat-dot {
+.cat-dot {
+  display: inline-block;
+  flex-shrink: 0;
   width: 0.55rem;
   height: 0.55rem;
   border-radius: 50%;
   background: var(--cat-color, var(--accent));
+  vertical-align: middle;
+}
+
+.week-summary .cat-dot {
+  margin-right: 0.3rem;
+}
+
+.task-group-header .cat-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .task-group-header .cat-count {
+  flex-shrink: 0;
   margin-left: auto;
   font-weight: 400;
   font-size: 0.8rem;
@@ -212,7 +226,7 @@ main {
 
 .fab {
   position: fixed;
-  bottom: 1.5rem;
+  bottom: calc(1.5rem + env(safe-area-inset-bottom));
   right: 1.5rem;
   width: 3.25rem;
   height: 3.25rem;
@@ -317,7 +331,11 @@ main {
 }
 
 .hero {
-  padding: 1.25rem 1rem 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin: 0.75rem 1rem 0;
+  padding: 1rem;
   text-align: center;
 }
 
@@ -430,6 +448,13 @@ main {
   color: var(--text);
   padding: 0.6rem;
   font: inherit;
+}
+
+.auth-page #signin {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0b0b0d;
+  font-weight: 500;
 }
 
 .error {

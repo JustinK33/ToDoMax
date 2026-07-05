@@ -106,7 +106,7 @@ function reminderLabel(mins) {
 
 const CATEGORY_COLORS = {
   Health: "#4caf7d",
-  Study: "#5b8def",
+  Study: "#3fb8c9",
   Fitness: "#ef8354",
   Personal: "#b784e0",
   Work: "#e0c341",
@@ -277,7 +277,10 @@ async function refreshWeekSummary() {
   const summary = await apiFetch("/api/summary/week");
   const pct = summary.expected ? Math.round((100 * summary.completed) / summary.expected) : 0;
   const categories = (summary.by_category ?? [])
-    .map((c) => `<span>${escapeHtml(c.category)}: ${c.completed}/${c.expected}</span>`)
+    .map((c) => {
+      const color = categoryColor(canonicalCategory(c.category));
+      return `<span><span class="cat-dot" style="background:${color}"></span>${escapeHtml(c.category)}: ${c.completed}/${c.expected}</span>`;
+    })
     .join("");
   weekSummaryEl.innerHTML = `
     <div class="total">${summary.completed}/${summary.expected} done this week (${pct}%)</div>
@@ -430,10 +433,14 @@ function reportError(err, action = "saving") {
 // helper shared by every mutating handler so a future edit can't add a
 // refresh call without also getting it covered by that handler's try/catch.
 async function refreshView({ categories = false } = {}) {
-  await loadTasks();
-  if (categories) await refreshCategories();
-  await refreshWeekSummary();
-  await refreshHero();
+  const jobs = [loadTasks(), refreshWeekSummary(), refreshHero()];
+  if (categories) jobs.push(refreshCategories());
+  // Run independently (not sequential awaits) so one failing fetch - e.g.
+  // tasks unreachable - doesn't also block the hero's date text, which
+  // needs no network call and should always render.
+  const results = await Promise.allSettled(jobs);
+  const failed = results.find((r) => r.status === "rejected");
+  if (failed) throw failed.reason;
 }
 
 listEl.addEventListener("click", async (e) => {
