@@ -86,6 +86,13 @@ function emptyMessage() {
   return EMPTY_MESSAGES[state.view] ?? EMPTY_MESSAGES.all;
 }
 
+function reminderLabel(mins) {
+  if (!mins) return "";
+  if (mins % 1440 === 0) return `⏰ ${mins / 1440}d before`;
+  if (mins % 60 === 0) return `⏰ ${mins / 60}h before`;
+  return `⏰ ${mins}m before`;
+}
+
 function renderTasks(tasks) {
   listEl.innerHTML = "";
   emptyEl.textContent = emptyMessage();
@@ -97,11 +104,13 @@ function renderTasks(tasks) {
 
     const due = [t.due_date, t.due_time?.slice(0, 5)].filter(Boolean).join(" ");
     const recurLabel = t.recurrence_type === "daily" ? "daily" : t.recurrence_type === "weekly" ? "weekly" : "";
+    const reminder = reminderLabel(t.reminder_minutes_before);
+    const metaParts = [due, t.category, recurLabel, reminder].filter(Boolean);
     li.innerHTML = `
       <input type="checkbox" ${t.completed ? "checked" : ""} data-id="${t.id}" data-date="${t.due_date ?? ""}" class="toggle" />
       <div class="body" data-id="${t.id}">
         <div class="title">${escapeHtml(t.title)}</div>
-        ${due || t.category || recurLabel ? `<div class="meta">${[due, t.category, recurLabel].filter(Boolean).map(escapeHtml).join(" · ")}</div>` : ""}
+        ${metaParts.length ? `<div class="meta">${metaParts.map(escapeHtml).join(" · ")}</div>` : ""}
       </div>
     `;
     listEl.appendChild(li);
