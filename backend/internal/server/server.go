@@ -108,6 +108,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("DELETE /api/meals/{id}", requireAuth(http.HandlerFunc(s.handleDeleteMeal)))
 
 	mux.Handle("POST /api/nutrition/log", requireAuth(http.HandlerFunc(s.handleCreateLogEntry)))
+	mux.Handle("PUT /api/nutrition/log/{id}", requireAuth(http.HandlerFunc(s.handleUpdateLogEntry)))
 	mux.Handle("DELETE /api/nutrition/log/{id}", requireAuth(http.HandlerFunc(s.handleDeleteLogEntry)))
 	mux.Handle("GET /api/nutrition/day", requireAuth(http.HandlerFunc(s.handleDaySummary)))
 	mux.Handle("GET /api/nutrition/target", requireAuth(http.HandlerFunc(s.handleGetTarget)))
@@ -120,6 +121,11 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("DELETE /api/exercises/{id}", requireAuth(http.HandlerFunc(s.handleDeleteExercise)))
 	mux.Handle("POST /api/workout-sets", requireAuth(http.HandlerFunc(s.handleCreateWorkoutSet)))
 	mux.Handle("DELETE /api/workout-sets/{id}", requireAuth(http.HandlerFunc(s.handleDeleteWorkoutSet)))
+	mux.Handle("POST /api/workout-templates", requireAuth(http.HandlerFunc(s.handleCreateTemplate)))
+	mux.Handle("GET /api/workout-templates", requireAuth(http.HandlerFunc(s.handleListTemplates)))
+	mux.Handle("GET /api/workout-templates/{id}", requireAuth(http.HandlerFunc(s.handleGetTemplate)))
+	mux.Handle("PUT /api/workout-templates/{id}", requireAuth(http.HandlerFunc(s.handleUpdateTemplate)))
+	mux.Handle("DELETE /api/workout-templates/{id}", requireAuth(http.HandlerFunc(s.handleDeleteTemplate)))
 	mux.Handle("GET /api/training/summary", requireAuth(http.HandlerFunc(s.handleTrainingSummary)))
 
 	return s.cors(mux)

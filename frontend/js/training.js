@@ -10,11 +10,15 @@ const heroStatsEl = document.getElementById("hero-stats");
 const prListEl = document.getElementById("pr-list");
 const setForm = document.getElementById("set-form");
 const exerciseForm = document.getElementById("exercise-form");
-const allForms = [setForm, exerciseForm];
+const templateForm = document.getElementById("template-form");
+const allForms = [setForm, exerciseForm, templateForm];
 
 const state = { view: "today" };
 let currentExercises = [];
+let currentTemplates = [];
 let editingExerciseId = null;
+let editingTemplateId = null;
+let activeTemplate = null;
 
 function reportError(err, action = "saving") {
   console.error(err);
@@ -119,7 +123,10 @@ async function loadExercises() {
 async function loadView() {
   try {
     if (state.view === "today") await loadToday();
-    else await loadExercises();
+    else if (state.view === "workouts") {
+      if (activeTemplate) renderActiveTemplate();
+      else await loadTemplates();
+    } else await loadExercises();
   } catch (err) {
     console.error(err);
     emptyEl.textContent = "Couldn't load that. Check your connection and reload the page.";
@@ -131,6 +138,7 @@ viewTabs.addEventListener("click", async (e) => {
   const btn = e.target.closest("button[data-view]");
   if (!btn) return;
   state.view = btn.dataset.view;
+  activeTemplate = null;
   for (const tab of viewTabs.querySelectorAll("button")) tab.classList.toggle("active", tab === btn);
   await loadView();
 });
@@ -144,6 +152,7 @@ function closeModal() {
   modalBackdrop.classList.add("hidden");
   for (const f of allForms) f.reset();
   editingExerciseId = null;
+  editingTemplateId = null;
 }
 
 document.querySelectorAll(".cancel-modal").forEach((btn) => btn.addEventListener("click", closeModal));
@@ -153,6 +162,7 @@ modalBackdrop.addEventListener("click", (e) => {
 
 document.getElementById("new-item").addEventListener("click", () => {
   if (state.view === "today") openSetModal();
+  else if (state.view === "workouts") openTemplateModal(null);
   else openExerciseModal(null);
 });
 
@@ -168,10 +178,35 @@ listEl.addEventListener("click", async (e) => {
     return;
   }
 
+  const back = e.target.closest(".back-to-workouts");
+  if (back) {
+    activeTemplate = null;
+    await loadTemplates();
+    return;
+  }
+
+  const startExercise = e.target.closest(".start-exercise");
+  if (startExercise) {
+    openSetModal(startExercise.dataset.id);
+    return;
+  }
+
+  const start = e.target.closest(".start-template");
+  if (start) {
+    activeTemplate = currentTemplates.find((t) => t.id === start.dataset.id);
+    renderActiveTemplate();
+    return;
+  }
+
   const row = e.target.closest(".task-manage");
   if (!row) return;
-  const exercise = currentExercises.find((item) => item.id === row.dataset.id);
-  if (exercise) openExerciseModal(exercise);
+  if (state.view === "exercises") {
+    const exercise = currentExercises.find((item) => item.id === row.dataset.id);
+    if (exercise) openExerciseModal(exercise);
+  } else if (state.view === "workouts") {
+    const template = currentTemplates.find((item) => item.id === row.dataset.id);
+    if (template) openTemplateModal(template);
+  }
 });
 
 function populateExerciseSelect() {
@@ -180,13 +215,14 @@ function populateExerciseSelect() {
     .join("");
 }
 
-function openSetModal() {
+function openSetModal(exerciseId) {
   if (currentExercises.length === 0) {
     openExerciseModal(null);
     return;
   }
   setForm.reset();
   populateExerciseSelect();
+  if (exerciseId) setForm.exercise_id.value = exerciseId;
   setForm.performed_on.value = localDateStr(new Date());
   showModal(setForm);
 }
@@ -204,13 +240,25 @@ setForm.addEventListener("submit", async (e) => {
   try {
     await apiFetch("/api/workout-sets", { method: "POST", body: JSON.stringify(payload) });
     closeModal();
-    await loadToday();
+    if (state.view === "workouts") {
+      const summary = await apiFetch("/api/training/summary");
+      renderHero(summary);
+    }
+    await loadView();
   } catch (err) {
     reportError(err);
   }
 });
 
+function populateCategoryDatalist() {
+  const categories = [...new Set(currentExercises.map((e) => e.category).filter(Boolean))].sort();
+  document.getElementById("category-options").innerHTML = categories
+    .map((c) => `<option value="${escapeHtml(c)}"></option>`)
+    .join("");
+}
+
 function openExerciseModal(exercise) {
+  populateCategoryDatalist();
   editingExerciseId = exercise?.id ?? null;
   document.getElementById("exercise-modal-title").textContent = editingExerciseId ? "Edit exercise" : "New exercise";
   exerciseForm.name.value = exercise?.name ?? "";
@@ -258,6 +306,124 @@ document.getElementById("delete-exercise").addEventListener("click", async () =>
     await apiFetch(`/api/exercises/${editingExerciseId}`, { method: "DELETE" });
     closeModal();
     await loadExercises();
+  } catch (err) {
+    reportError(err, "deleting");
+  }
+});
+
+function templateRow(template) {
+  const li = document.createElement("li");
+  li.className = "task task-manage";
+  li.dataset.id = template.id;
+  const names = template.items.map((i) => escapeHtml(i.exercise_name)).join(", ") || "No exercises yet";
+  const countWord = template.items.length === 1 ? "exercise" : "exercises";
+  li.innerHTML = `
+    <div class="body">
+      <div class="title">${escapeHtml(template.name)}</div>
+      <div class="meta">${template.items.length} ${countWord} &middot; ${names}</div>
+    </div>
+    <button type="button" class="start-template" data-id="${template.id}">Start</button>
+    <span class="chevron" aria-hidden="true">&rsaquo;</span>
+  `;
+  return li;
+}
+
+async function loadTemplates() {
+  prListEl.classList.add("hidden");
+  currentTemplates = await apiFetch("/api/workout-templates");
+  emptyEl.textContent = "No workouts yet. Tap + to build one, e.g. 'Leg Day A'.";
+  emptyEl.classList.toggle("hidden", currentTemplates.length > 0);
+  listEl.innerHTML = "";
+  for (const template of currentTemplates) listEl.appendChild(templateRow(template));
+}
+
+function renderActiveTemplate() {
+  prListEl.classList.add("hidden");
+  emptyEl.classList.add("hidden");
+  listEl.innerHTML = "";
+  const back = document.createElement("li");
+  back.className = "task task-manage back-to-workouts";
+  back.innerHTML = `<div class="body"><div class="title">&larr; Back to workouts</div></div>`;
+  listEl.appendChild(back);
+  for (const item of activeTemplate.items) {
+    const li = document.createElement("li");
+    li.className = "task task-manage start-exercise";
+    li.dataset.id = item.exercise_id;
+    li.innerHTML = `
+      <div class="body"><div class="title">${escapeHtml(item.exercise_name)}</div></div>
+      <span class="chevron" aria-hidden="true">&rsaquo;</span>
+    `;
+    listEl.appendChild(li);
+  }
+}
+
+function templateItemRow(exerciseId) {
+  const row = document.createElement("div");
+  row.className = "meal-item-row template-item-row";
+  row.innerHTML = `
+    <select class="template-item-exercise">
+      ${currentExercises.map((ex) => `<option value="${ex.id}" ${ex.id === exerciseId ? "selected" : ""}>${escapeHtml(ex.name)}</option>`).join("")}
+    </select>
+    <button type="button" class="remove-meal-item">&times;</button>
+  `;
+  row.querySelector(".remove-meal-item").addEventListener("click", () => row.remove());
+  return row;
+}
+
+document.getElementById("add-template-item").addEventListener("click", () => {
+  if (currentExercises.length === 0) {
+    alert("Create an exercise first.");
+    return;
+  }
+  document.getElementById("template-items").appendChild(templateItemRow(currentExercises[0].id));
+});
+
+function openTemplateModal(template) {
+  editingTemplateId = template?.id ?? null;
+  document.getElementById("template-modal-title").textContent = editingTemplateId ? "Edit workout" : "New workout";
+  templateForm.name.value = template?.name ?? "";
+  const itemsEl = document.getElementById("template-items");
+  itemsEl.innerHTML = "";
+  for (const item of template?.items ?? []) itemsEl.appendChild(templateItemRow(item.exercise_id));
+  const deleteBtn = document.getElementById("delete-template");
+  deleteBtn.classList.toggle("hidden", !editingTemplateId);
+  deleteBtn.textContent = "Delete";
+  deleteBtn.classList.remove("confirm");
+  showModal(templateForm);
+}
+
+templateForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const items = [...document.querySelectorAll(".template-item-row")].map((row) => ({
+    exercise_id: row.querySelector(".template-item-exercise").value,
+  }));
+  const payload = { name: templateForm.name.value.trim(), items };
+  if (!payload.name) return;
+  try {
+    if (editingTemplateId) {
+      await apiFetch(`/api/workout-templates/${editingTemplateId}`, { method: "PUT", body: JSON.stringify(payload) });
+    } else {
+      await apiFetch("/api/workout-templates", { method: "POST", body: JSON.stringify(payload) });
+    }
+    closeModal();
+    await loadTemplates();
+  } catch (err) {
+    reportError(err);
+  }
+});
+
+document.getElementById("delete-template").addEventListener("click", async () => {
+  const btn = document.getElementById("delete-template");
+  if (!editingTemplateId) return;
+  if (!btn.classList.contains("confirm")) {
+    btn.textContent = "Tap again to delete";
+    btn.classList.add("confirm");
+    return;
+  }
+  try {
+    await apiFetch(`/api/workout-templates/${editingTemplateId}`, { method: "DELETE" });
+    closeModal();
+    await loadTemplates();
   } catch (err) {
     reportError(err, "deleting");
   }

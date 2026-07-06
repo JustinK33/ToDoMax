@@ -137,6 +137,82 @@ func (s *Server) handleDeleteWorkoutSet(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// --- Templates ---
+
+func (s *Server) handleCreateTemplate(w http.ResponseWriter, r *http.Request) {
+	userID, _ := auth.UserID(r.Context())
+
+	var in training.TemplateInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+	in.Name = strings.TrimSpace(in.Name)
+
+	template, err := s.training.CreateTemplate(r.Context(), userID, in)
+	if err != nil {
+		writeTrainingErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, template)
+}
+
+func (s *Server) handleListTemplates(w http.ResponseWriter, r *http.Request) {
+	userID, _ := auth.UserID(r.Context())
+
+	templates, err := s.training.ListTemplates(r.Context(), userID)
+	if err != nil {
+		writeUnexpectedErr(w, err)
+		return
+	}
+	if templates == nil {
+		templates = []training.Template{}
+	}
+	writeJSON(w, http.StatusOK, templates)
+}
+
+func (s *Server) handleGetTemplate(w http.ResponseWriter, r *http.Request) {
+	userID, _ := auth.UserID(r.Context())
+	id := r.PathValue("id")
+
+	template, err := s.training.GetTemplate(r.Context(), userID, id)
+	if err != nil {
+		writeErr(w, trainingErrStatus(err), "template not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, template)
+}
+
+func (s *Server) handleUpdateTemplate(w http.ResponseWriter, r *http.Request) {
+	userID, _ := auth.UserID(r.Context())
+	id := r.PathValue("id")
+
+	var in training.TemplateInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+	in.Name = strings.TrimSpace(in.Name)
+
+	template, err := s.training.UpdateTemplate(r.Context(), userID, id, in)
+	if err != nil {
+		writeTrainingErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, template)
+}
+
+func (s *Server) handleDeleteTemplate(w http.ResponseWriter, r *http.Request) {
+	userID, _ := auth.UserID(r.Context())
+	id := r.PathValue("id")
+
+	if err := s.training.DeleteTemplate(r.Context(), userID, id); err != nil {
+		writeErr(w, trainingErrStatus(err), "template not found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) handleTrainingSummary(w http.ResponseWriter, r *http.Request) {
 	userID, _ := auth.UserID(r.Context())
 

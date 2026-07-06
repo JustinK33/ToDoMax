@@ -92,6 +92,36 @@ func (s *Store) CreateLogEntry(ctx context.Context, userID string, in LogEntryIn
 	return s.getLogEntry(ctx, userID, id)
 }
 
+func (s *Store) UpdateLogEntry(ctx context.Context, userID, id string, in LogEntryInput) (LogEntry, error) {
+	if err := validateLogEntryInput(in); err != nil {
+		return LogEntry{}, err
+	}
+
+	if in.FoodID != nil {
+		if _, err := s.GetFood(ctx, userID, *in.FoodID); err != nil {
+			return LogEntry{}, ErrInvalidInput{"food not found"}
+		}
+	} else {
+		if _, err := s.GetMeal(ctx, userID, *in.MealID); err != nil {
+			return LogEntry{}, ErrInvalidInput{"meal not found"}
+		}
+	}
+
+	tag, err := s.db.Exec(ctx, `
+		update food_log_entries
+		set log_date = $3, food_id = $4, meal_id = $5, servings = $6
+		where user_id = $1 and id = $2`,
+		userID, id, in.LogDate, in.FoodID, in.MealID, in.Servings,
+	)
+	if err != nil {
+		return LogEntry{}, err
+	}
+	if tag.RowsAffected() == 0 {
+		return LogEntry{}, pgx.ErrNoRows
+	}
+	return s.getLogEntry(ctx, userID, id)
+}
+
 func (s *Store) getLogEntry(ctx context.Context, userID, id string) (LogEntry, error) {
 	entries, err := s.logEntriesForDate(ctx, userID, "", id)
 	if err != nil {

@@ -339,7 +339,9 @@ main {
 
 #delete-exercise.confirm,
 #delete-food.confirm,
-#delete-meal.confirm {
+#delete-meal.confirm,
+#delete-template.confirm,
+#delete-entry.confirm {
   background: var(--danger);
   border-color: var(--danger);
   color: #0b0b0d;
@@ -399,6 +401,26 @@ main {
 .hero-date {
   font-size: 1.4rem;
   font-weight: 600;
+}
+
+.hero-date-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.hero-date-nav button {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 0.2rem 0.4rem;
+}
+
+.hero-date-nav button:disabled {
+  opacity: 0.3;
 }
 
 .hero-stats {
@@ -461,6 +483,10 @@ main {
 
 .meal-item-row input {
   flex: 1;
+}
+
+.meal-item-row input.meal-item-food {
+  flex: 2;
 }
 
 .meal-item-row button {

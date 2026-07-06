@@ -168,6 +168,47 @@ func TestMealTotalsAndDaySummary(t *testing.T) {
 	}
 }
 
+func TestUpdateLogEntry(t *testing.T) {
+	store, userID := newTestStore(t)
+	ctx := context.Background()
+
+	rice, err := store.CreateFood(ctx, userID, FoodInput{
+		Name: "Rice", ServingLabel: "1 cup", Calories: 200, ProteinG: 4, CarbsG: 45, FatG: 0.4,
+	})
+	if err != nil {
+		t.Fatalf("CreateFood failed: %v", err)
+	}
+
+	entry, err := store.CreateLogEntry(ctx, userID, LogEntryInput{LogDate: "2026-07-06", FoodID: &rice.ID, Servings: 1})
+	if err != nil {
+		t.Fatalf("CreateLogEntry failed: %v", err)
+	}
+
+	updated, err := store.UpdateLogEntry(ctx, userID, entry.ID, LogEntryInput{LogDate: "2026-07-07", FoodID: &rice.ID, Servings: 2})
+	if err != nil {
+		t.Fatalf("UpdateLogEntry failed: %v", err)
+	}
+	if updated.LogDate != "2026-07-07" || updated.Servings != 2 || updated.Calories != 400 {
+		t.Fatalf("unexpected updated entry: %+v", updated)
+	}
+
+	oldDay, err := store.DaySummary(ctx, userID, "2026-07-06")
+	if err != nil {
+		t.Fatalf("DaySummary(old date) failed: %v", err)
+	}
+	if len(oldDay.Entries) != 0 {
+		t.Fatalf("expected no entries on the old date, got %+v", oldDay.Entries)
+	}
+
+	newDay, err := store.DaySummary(ctx, userID, "2026-07-07")
+	if err != nil {
+		t.Fatalf("DaySummary(new date) failed: %v", err)
+	}
+	if len(newDay.Entries) != 1 || newDay.Totals.Calories != 400 {
+		t.Fatalf("expected the moved entry on the new date, got %+v", newDay)
+	}
+}
+
 func TestUpsertTargetDoesNotDuplicate(t *testing.T) {
 	store, userID := newTestStore(t)
 	ctx := context.Background()

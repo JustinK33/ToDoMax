@@ -14,12 +14,13 @@ const mealForm = document.getElementById("meal-form");
 const targetForm = document.getElementById("target-form");
 const allForms = [logForm, foodForm, mealForm, targetForm];
 
-const state = { view: "today" };
+const state = { view: "today", viewedDate: localDateStr(new Date()) };
 let currentFoods = [];
 let currentMeals = [];
 let currentSummary = null;
 let editingFoodId = null;
 let editingMealId = null;
+let editingEntryId = null;
 
 function reportError(err, action = "saving") {
   console.error(err);
@@ -40,11 +41,14 @@ function round1(n) {
 // --- Today / log view ---
 
 function renderHero(summary) {
-  heroDateEl.textContent = new Date().toLocaleDateString(undefined, {
+  const viewed = new Date(`${state.viewedDate}T00:00:00`);
+  heroDateEl.textContent = viewed.toLocaleDateString(undefined, {
     weekday: "long",
     month: "long",
     day: "numeric",
   });
+  document.getElementById("next-day").disabled = state.viewedDate >= localDateStr(new Date());
+
   const t = summary.target ?? {};
   const totals = summary.totals ?? { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 };
   const parts = [];
@@ -52,6 +56,10 @@ function renderHero(summary) {
   else parts.push(`${Math.round(totals.calories)} cal`);
   if (t.protein_g != null) parts.push(`${round1(totals.protein_g)}/${t.protein_g}g protein`);
   else if (totals.protein_g) parts.push(`${round1(totals.protein_g)}g protein`);
+  if (t.carbs_g != null) parts.push(`${round1(totals.carbs_g)}/${t.carbs_g}g carbs`);
+  else if (totals.carbs_g) parts.push(`${round1(totals.carbs_g)}g carbs`);
+  if (t.fat_g != null) parts.push(`${round1(totals.fat_g)}/${t.fat_g}g fat`);
+  else if (totals.fat_g) parts.push(`${round1(totals.fat_g)}g fat`);
 
   const hitProtein = t.protein_g != null && totals.protein_g >= t.protein_g;
   const pill = hitProtein ? `<span class="pill pill-accent">Protein goal hit</span>` : "";
@@ -60,19 +68,20 @@ function renderHero(summary) {
 
 function entryRow(e) {
   const li = document.createElement("li");
-  li.className = "task";
+  li.className = "task task-manage";
+  li.dataset.id = e.id;
   li.innerHTML = `
     <div class="body">
       <div class="title">${escapeHtml(e.name)}</div>
-      <div class="meta">${e.servings}&times; · ${Math.round(e.calories)} cal · ${round1(e.protein_g)}g protein</div>
+      <div class="meta">${e.servings}&times; · ${Math.round(e.calories)} cal · ${round1(e.protein_g)}g protein · ${round1(e.carbs_g)}g carbs · ${round1(e.fat_g)}g fat</div>
     </div>
-    <button type="button" class="delete-entry" data-id="${e.id}" aria-label="Remove">&times;</button>
+    <span class="chevron" aria-hidden="true">&rsaquo;</span>
   `;
   return li;
 }
 
 async function loadToday() {
-  currentSummary = await apiFetch("/api/nutrition/day");
+  currentSummary = await apiFetch(`/api/nutrition/day?date=${state.viewedDate}`);
   renderHero(currentSummary);
   const entries = currentSummary.entries ?? [];
   emptyEl.textContent = "Nothing logged today yet. Tap + to log a food or meal.";
@@ -149,6 +158,22 @@ viewTabs.addEventListener("click", async (e) => {
   await loadView();
 });
 
+function shiftViewedDate(days) {
+  const d = new Date(`${state.viewedDate}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  state.viewedDate = localDateStr(d);
+}
+
+document.getElementById("prev-day").addEventListener("click", async () => {
+  shiftViewedDate(-1);
+  await loadToday();
+});
+
+document.getElementById("next-day").addEventListener("click", async () => {
+  shiftViewedDate(1);
+  await loadToday();
+});
+
 // --- Modal plumbing ---
 
 function showModal(form) {
@@ -161,6 +186,7 @@ function closeModal() {
   for (const f of allForms) f.reset();
   editingFoodId = null;
   editingMealId = null;
+  editingEntryId = null;
 }
 
 document.querySelectorAll(".cancel-modal").forEach((btn) => btn.addEventListener("click", closeModal));
@@ -169,26 +195,18 @@ modalBackdrop.addEventListener("click", (e) => {
 });
 
 document.getElementById("new-item").addEventListener("click", () => {
-  if (state.view === "today") openLogModal();
+  if (state.view === "today") openLogModal(null);
   else if (state.view === "foods") openFoodModal(null);
   else openMealModal(null);
 });
 
 listEl.addEventListener("click", async (e) => {
-  const del = e.target.closest(".delete-entry");
-  if (del) {
-    try {
-      await apiFetch(`/api/nutrition/log/${del.dataset.id}`, { method: "DELETE" });
-      await loadToday();
-    } catch (err) {
-      reportError(err, "deleting");
-    }
-    return;
-  }
-
   const row = e.target.closest(".task-manage");
   if (row) {
-    if (state.view === "foods") {
+    if (state.view === "today") {
+      const entry = (currentSummary?.entries ?? []).find((entry) => entry.id === row.dataset.id);
+      if (entry) openLogModal(entry);
+    } else if (state.view === "foods") {
       const food = currentFoods.find((f) => f.id === row.dataset.id);
       if (food) openFoodModal(food);
     } else if (state.view === "meals") {
@@ -200,21 +218,31 @@ listEl.addEventListener("click", async (e) => {
 
 // --- Log modal ---
 
-function openLogModal() {
+function openLogModal(entry) {
+  editingEntryId = entry?.id ?? null;
+  document.getElementById("log-modal-title").textContent = editingEntryId ? "Edit log entry" : "Log food";
   logForm.reset();
-  logForm.log_date.value = localDateStr(new Date());
-  setLogSource("food");
+  logForm.log_date.value = entry?.log_date ?? state.viewedDate;
+  logForm.servings.value = entry?.servings ?? 1;
+  setLogSource(entry?.meal_id ? "meal" : "food", entry?.name);
+  const deleteBtn = document.getElementById("delete-entry");
+  deleteBtn.classList.toggle("hidden", !editingEntryId);
+  deleteBtn.textContent = "Delete";
+  deleteBtn.classList.remove("confirm");
   showModal(logForm);
 }
 
-function setLogSource(source) {
+function setLogSource(source, selectedName) {
   for (const btn of logForm.querySelectorAll(".source-toggle")) {
     btn.classList.toggle("active", btn.dataset.source === source);
   }
-  const select = document.getElementById("log-source-select");
+  const input = document.getElementById("log-source-input");
   const options = source === "food" ? currentFoods : currentMeals;
-  select.innerHTML = options.map((o) => `<option value="${o.id}">${escapeHtml(o.name)}</option>`).join("");
-  select.dataset.source = source;
+  document.getElementById("log-source-options").innerHTML = options
+    .map((o) => `<option value="${escapeHtml(o.name)}"></option>`)
+    .join("");
+  input.value = selectedName ?? "";
+  input.dataset.source = source;
 }
 
 logForm.querySelectorAll(".source-toggle").forEach((btn) => {
@@ -223,24 +251,47 @@ logForm.querySelectorAll(".source-toggle").forEach((btn) => {
 
 logForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const select = document.getElementById("log-source-select");
-  const id = select.value;
-  if (!id) {
-    alert(state.view === "today" && select.dataset.source === "food" ? "Create a food first." : "Create a meal first.");
+  const input = document.getElementById("log-source-input");
+  const source = input.dataset.source;
+  const list = source === "food" ? currentFoods : currentMeals;
+  const match = list.find((o) => o.name === input.value.trim());
+  if (!match) {
+    alert(source === "food" ? "Pick a food from the list (or create one first)." : "Pick a meal from the list (or create one first).");
     return;
   }
   const payload = {
     log_date: logForm.log_date.value,
     servings: Number(logForm.servings.value),
-    food_id: select.dataset.source === "food" ? id : null,
-    meal_id: select.dataset.source === "meal" ? id : null,
+    food_id: source === "food" ? match.id : null,
+    meal_id: source === "meal" ? match.id : null,
   };
   try {
-    await apiFetch("/api/nutrition/log", { method: "POST", body: JSON.stringify(payload) });
+    if (editingEntryId) {
+      await apiFetch(`/api/nutrition/log/${editingEntryId}`, { method: "PUT", body: JSON.stringify(payload) });
+    } else {
+      await apiFetch("/api/nutrition/log", { method: "POST", body: JSON.stringify(payload) });
+    }
     closeModal();
     await loadToday();
   } catch (err) {
     reportError(err);
+  }
+});
+
+document.getElementById("delete-entry").addEventListener("click", async () => {
+  const btn = document.getElementById("delete-entry");
+  if (!editingEntryId) return;
+  if (!btn.classList.contains("confirm")) {
+    btn.textContent = "Tap again to delete";
+    btn.classList.add("confirm");
+    return;
+  }
+  try {
+    await apiFetch(`/api/nutrition/log/${editingEntryId}`, { method: "DELETE" });
+    closeModal();
+    await loadToday();
+  } catch (err) {
+    reportError(err, "deleting");
   }
 });
 
@@ -305,13 +356,18 @@ document.getElementById("delete-food").addEventListener("click", async () => {
 
 // --- Meal modal ---
 
+function populateMealItemFoodsDatalist() {
+  document.getElementById("meal-item-foods").innerHTML = currentFoods
+    .map((f) => `<option value="${escapeHtml(f.name)}"></option>`)
+    .join("");
+}
+
 function mealItemRow(foodId, servings) {
+  const food = currentFoods.find((f) => f.id === foodId);
   const row = document.createElement("div");
   row.className = "meal-item-row";
   row.innerHTML = `
-    <select class="meal-item-food">
-      ${currentFoods.map((f) => `<option value="${f.id}" ${f.id === foodId ? "selected" : ""}>${escapeHtml(f.name)}</option>`).join("")}
-    </select>
+    <input class="meal-item-food" list="meal-item-foods" autocomplete="off" placeholder="Type to search..." value="${escapeHtml(food?.name ?? "")}" />
     <input class="meal-item-servings" type="number" min="0.1" step="0.1" value="${servings ?? 1}" />
     <button type="button" class="remove-meal-item">&times;</button>
   `;
@@ -324,10 +380,11 @@ document.getElementById("add-meal-item").addEventListener("click", () => {
     alert("Create a food first.");
     return;
   }
-  document.getElementById("meal-items").appendChild(mealItemRow(currentFoods[0].id, 1));
+  document.getElementById("meal-items").appendChild(mealItemRow(null, 1));
 });
 
 function openMealModal(meal) {
+  populateMealItemFoodsDatalist();
   editingMealId = meal?.id ?? null;
   document.getElementById("meal-modal-title").textContent = editingMealId ? "Edit meal" : "New meal";
   mealForm.name.value = meal?.name ?? "";
@@ -343,10 +400,14 @@ function openMealModal(meal) {
 
 mealForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const items = [...document.querySelectorAll(".meal-item-row")].map((row) => ({
-    food_id: row.querySelector(".meal-item-food").value,
-    servings: Number(row.querySelector(".meal-item-servings").value) || 1,
-  }));
+  const items = [...document.querySelectorAll(".meal-item-row")]
+    .map((row) => {
+      const name = row.querySelector(".meal-item-food").value.trim();
+      const food = currentFoods.find((f) => f.name === name);
+      if (!food) return null;
+      return { food_id: food.id, servings: Number(row.querySelector(".meal-item-servings").value) || 1 };
+    })
+    .filter(Boolean);
   const payload = { name: mealForm.name.value.trim(), items };
   if (!payload.name) return;
   try {

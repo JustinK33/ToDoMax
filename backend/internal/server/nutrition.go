@@ -204,6 +204,24 @@ func (s *Server) handleCreateLogEntry(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, entry)
 }
 
+func (s *Server) handleUpdateLogEntry(w http.ResponseWriter, r *http.Request) {
+	userID, _ := auth.UserID(r.Context())
+	id := r.PathValue("id")
+
+	var in nutrition.LogEntryInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+
+	entry, err := s.nutrition.UpdateLogEntry(r.Context(), userID, id, in)
+	if err != nil {
+		writeNutritionErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, entry)
+}
+
 func (s *Server) handleDeleteLogEntry(w http.ResponseWriter, r *http.Request) {
 	userID, _ := auth.UserID(r.Context())
 	id := r.PathValue("id")

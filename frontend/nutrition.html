@@ -28,7 +28,11 @@
       </div>
     </header>
     <section class="hero">
-      <div class="hero-date" id="hero-date"></div>
+      <div class="hero-date-nav">
+        <button type="button" id="prev-day" aria-label="Previous day">&lsaquo;</button>
+        <div class="hero-date" id="hero-date"></div>
+        <button type="button" id="next-day" aria-label="Next day">&rsaquo;</button>
+      </div>
       <div class="hero-stats" id="hero-stats"></div>
       <button type="button" id="set-target" class="link-button">Set goal</button>
     </section>
@@ -46,13 +50,14 @@
 
   <div id="modal-backdrop" class="modal-backdrop hidden">
     <form id="log-form" class="modal hidden">
-      <h2>Log food</h2>
+      <h2 id="log-modal-title">Log food</h2>
       <div class="row">
         <button type="button" data-source="food" class="source-toggle active">Food</button>
         <button type="button" data-source="meal" class="source-toggle">Meal</button>
       </div>
       <label>Which one
-        <select id="log-source-select"></select>
+        <input id="log-source-input" list="log-source-options" placeholder="Type to search..." autocomplete="off" required />
+        <datalist id="log-source-options"></datalist>
       </label>
       <div class="row">
         <label>Servings
@@ -63,6 +68,7 @@
         </label>
       </div>
       <div class="actions">
+        <button type="button" id="delete-entry" class="hidden">Delete</button>
         <span style="flex:1"></span>
         <button type="button" class="cancel-modal">Cancel</button>
         <button type="submit">Log it</button>
@@ -107,6 +113,7 @@
         <input name="name" required maxlength="200" />
       </label>
       <div id="meal-items"></div>
+      <datalist id="meal-item-foods"></datalist>
       <button type="button" id="add-meal-item">+ Add food</button>
       <div class="actions">
         <button type="button" id="delete-meal" class="hidden">Delete</button>
