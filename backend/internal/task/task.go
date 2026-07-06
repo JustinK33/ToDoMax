@@ -705,3 +705,113 @@ func (s *Store) WeekSummary(ctx context.Context, userID string, now time.Time) (
 	}
 	return summary, nil
 }
+
+// Habit is a recurring task shown on the Wellness page's Habits tab, with
+// today's completion state and current streak attached. There's no separate
+// habits table - a "habit" is just a task with recurrence_type != "none".
+type Habit struct {
+	TaskID         string  `json:"id"`
+	Title          string  `json:"title"`
+	Category       *string `json:"category"`
+	RecurrenceType string  `json:"recurrence_type"`
+	RecurrenceDays []int   `json:"recurrence_days,omitempty"`
+	CompletedToday bool    `json:"completed_today"`
+	Streak         int     `json:"streak"`
+}
+
+// streakFor counts consecutive scheduled days completed, walking backward
+// from today. Non-scheduled days are skipped without breaking the streak.
+// Today is special-cased: if scheduled but not yet completed, it's treated
+// as neutral (the day isn't over yet) rather than breaking yesterday's
+// streak.
+func streakFor(t Task, anchor *time.Time, completed map[string]bool, today time.Time) int {
+	streak := 0
+	d := today
+	for i := 0; i < 400; i++ { // bounds the walk-back; far more than any realistic streak
+		if anchor != nil && d.Before(*anchor) {
+			break
+		}
+		if occursOn(t, anchor, d) {
+			dateStr := d.Format("2006-01-02")
+			if completed[dateStr] {
+				streak++
+			} else if !d.Equal(today) {
+				break
+			}
+		}
+		d = d.AddDate(0, 0, -1)
+	}
+	return streak
+}
+
+// Habits returns every recurring task with today's completion state and
+// current streak, for the Wellness page. Completions for all recurring
+// tasks are fetched in one query (not one per task) to avoid N+1s.
+func (s *Store) Habits(ctx context.Context, userID string, now time.Time) ([]Habit, error) {
+	tasks, err := s.List(ctx, userID, Filter{View: "all", Now: now})
+	if err != nil {
+		return nil, err
+	}
+
+	var recurring []Task
+	recurringIDs := make([]string, 0, len(tasks))
+	for _, t := range tasks {
+		if t.RecurrenceType != "none" {
+			recurring = append(recurring, t)
+			recurringIDs = append(recurringIDs, t.ID)
+		}
+	}
+
+	completions := map[string]map[string]bool{} // taskID -> date -> completed
+	if len(recurringIDs) > 0 {
+		since := now.AddDate(0, 0, -400).Format("2006-01-02")
+		rows, err := s.db.Query(ctx, `
+			select task_id, occurrence_date from task_completions
+			where task_id = any($1::uuid[]) and occurrence_date >= $2`,
+			recurringIDs, since,
+		)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var taskID string
+			var occDate time.Time
+			if err := rows.Scan(&taskID, &occDate); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			if completions[taskID] == nil {
+				completions[taskID] = map[string]bool{}
+			}
+			completions[taskID][occDate.Format("2006-01-02")] = true
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	todayStr := today.Format("2006-01-02")
+
+	habits := make([]Habit, len(recurring))
+	for i, t := range recurring {
+		var anchor *time.Time
+		if t.DueDate != nil {
+			if a, err := time.Parse("2006-01-02", *t.DueDate); err == nil {
+				anchor = &a
+			}
+		}
+		done := completions[t.ID]
+		habits[i] = Habit{
+			TaskID:         t.ID,
+			Title:          t.Title,
+			Category:       t.Category,
+			RecurrenceType: t.RecurrenceType,
+			RecurrenceDays: t.RecurrenceDays,
+			CompletedToday: done[todayStr],
+			Streak:         streakFor(t, anchor, done, today),
+		}
+	}
+	return habits, nil
+}

@@ -341,10 +341,53 @@ main {
 #delete-food.confirm,
 #delete-meal.confirm,
 #delete-template.confirm,
-#delete-entry.confirm {
+#delete-entry.confirm,
+#delete-body-metric.confirm,
+#delete-sleep-log.confirm,
+#delete-mood-log.confirm {
   background: var(--danger);
   border-color: var(--danger);
   color: #0b0b0d;
+}
+
+.trend-card {
+  margin: 0.5rem 1rem 0;
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.trend-card .trend-label {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  margin-bottom: 0.4rem;
+}
+
+.dashboard-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.5rem;
+  margin: 0.5rem 1rem 0;
+}
+
+.dashboard-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  text-align: center;
+}
+
+.dashboard-card .label {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.dashboard-card .value {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-top: 0.2rem;
 }
 
 .pr-list {

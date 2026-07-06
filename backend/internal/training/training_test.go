@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -179,5 +180,69 @@ func TestTemplateRejectsOtherUsersExercise(t *testing.T) {
 	var invalid ErrInvalidInput
 	if !errors.As(err, &invalid) {
 		t.Fatalf("expected ErrInvalidInput for another user's exercise, got %v", err)
+	}
+}
+
+func TestVolumeHistoryZeroFillsUnloggedDays(t *testing.T) {
+	store, userID := newTestStore(t)
+	ctx := context.Background()
+
+	squat, err := store.CreateExercise(ctx, userID, ExerciseInput{Name: "Squat"})
+	if err != nil {
+		t.Fatalf("CreateExercise failed: %v", err)
+	}
+
+	today := time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC)
+	day1 := today.AddDate(0, 0, -2).Format("2006-01-02")
+	day3 := today.Format("2006-01-02")
+	if _, err := store.CreateSet(ctx, userID, SetInput{ExerciseID: squat.ID, PerformedOn: day1, Weight: 200, Reps: 5}); err != nil {
+		t.Fatalf("CreateSet(day1) failed: %v", err)
+	}
+	if _, err := store.CreateSet(ctx, userID, SetInput{ExerciseID: squat.ID, PerformedOn: day3, Weight: 200, Reps: 5}); err != nil {
+		t.Fatalf("CreateSet(day3) failed: %v", err)
+	}
+
+	history, err := store.VolumeHistory(ctx, userID, 3, today)
+	if err != nil {
+		t.Fatalf("VolumeHistory failed: %v", err)
+	}
+	if len(history) != 3 {
+		t.Fatalf("expected 3 days, got %d", len(history))
+	}
+	if history[0].Volume != 1000 || history[0].Sets != 1 {
+		t.Fatalf("expected day1 (1000 volume, 1 set), got %+v", history[0])
+	}
+	if history[1].Volume != 0 || history[1].Sets != 0 {
+		t.Fatalf("expected the middle day to be zero-filled, got %+v", history[1])
+	}
+	if history[2].Volume != 1000 {
+		t.Fatalf("expected today (1000 volume), got %+v", history[2])
+	}
+}
+
+func TestTrainingLoggingStreakNotBrokenByTodayUnlogged(t *testing.T) {
+	store, userID := newTestStore(t)
+	ctx := context.Background()
+
+	squat, err := store.CreateExercise(ctx, userID, ExerciseInput{Name: "Squat"})
+	if err != nil {
+		t.Fatalf("CreateExercise failed: %v", err)
+	}
+
+	today := time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC)
+	yesterday := today.AddDate(0, 0, -1).Format("2006-01-02")
+	dayBefore := today.AddDate(0, 0, -2).Format("2006-01-02")
+	for _, d := range []string{yesterday, dayBefore} {
+		if _, err := store.CreateSet(ctx, userID, SetInput{ExerciseID: squat.ID, PerformedOn: d, Weight: 200, Reps: 5}); err != nil {
+			t.Fatalf("CreateSet(%s) failed: %v", d, err)
+		}
+	}
+
+	streak, err := store.LoggingStreak(ctx, userID, today)
+	if err != nil {
+		t.Fatalf("LoggingStreak failed: %v", err)
+	}
+	if streak != 2 {
+		t.Fatalf("expected streak of 2 (today not logged yet shouldn't break it), got %d", streak)
 	}
 }

@@ -126,6 +126,20 @@ func (s *Server) handleWeekSummary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, summary)
 }
 
+func (s *Server) handleListHabits(w http.ResponseWriter, r *http.Request) {
+	userID, _ := auth.UserID(r.Context())
+
+	habits, err := s.tasks.Habits(r.Context(), userID, time.Now().In(s.cfg.Location))
+	if err != nil {
+		writeUnexpectedErr(w, err)
+		return
+	}
+	if habits == nil {
+		habits = []task.Habit{}
+	}
+	writeJSON(w, http.StatusOK, habits)
+}
+
 func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
 	userID, _ := auth.UserID(r.Context())
 	id := r.PathValue("id")

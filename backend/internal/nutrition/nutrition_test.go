@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -241,5 +242,69 @@ func TestGetTargetWithNoneSetIsEmptyNotError(t *testing.T) {
 	}
 	if target.Calories != nil || target.ProteinG != nil {
 		t.Fatalf("expected empty target, got %+v", target)
+	}
+}
+
+func TestHistoryZeroFillsUnloggedDays(t *testing.T) {
+	store, userID := newTestStore(t)
+	ctx := context.Background()
+
+	rice, err := store.CreateFood(ctx, userID, FoodInput{Name: "Rice", ServingLabel: "1 cup", Calories: 200, ProteinG: 4, CarbsG: 45, FatG: 0.4})
+	if err != nil {
+		t.Fatalf("CreateFood failed: %v", err)
+	}
+
+	today := time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC)
+	day1 := today.AddDate(0, 0, -2).Format("2006-01-02")
+	day3 := today.Format("2006-01-02")
+	if _, err := store.CreateLogEntry(ctx, userID, LogEntryInput{LogDate: day1, FoodID: &rice.ID, Servings: 1}); err != nil {
+		t.Fatalf("CreateLogEntry(day1) failed: %v", err)
+	}
+	if _, err := store.CreateLogEntry(ctx, userID, LogEntryInput{LogDate: day3, FoodID: &rice.ID, Servings: 1}); err != nil {
+		t.Fatalf("CreateLogEntry(day3) failed: %v", err)
+	}
+
+	history, err := store.History(ctx, userID, 3, today)
+	if err != nil {
+		t.Fatalf("History failed: %v", err)
+	}
+	if len(history) != 3 {
+		t.Fatalf("expected 3 days, got %d", len(history))
+	}
+	if history[0].Calories != 200 {
+		t.Fatalf("expected day1 (200 cal), got %+v", history[0])
+	}
+	if history[1].Calories != 0 {
+		t.Fatalf("expected the middle day to be zero-filled, got %+v", history[1])
+	}
+	if history[2].Calories != 200 {
+		t.Fatalf("expected today (200 cal), got %+v", history[2])
+	}
+}
+
+func TestLoggingStreakNotBrokenByTodayUnlogged(t *testing.T) {
+	store, userID := newTestStore(t)
+	ctx := context.Background()
+
+	rice, err := store.CreateFood(ctx, userID, FoodInput{Name: "Rice", ServingLabel: "1 cup", Calories: 200, ProteinG: 4, CarbsG: 45, FatG: 0.4})
+	if err != nil {
+		t.Fatalf("CreateFood failed: %v", err)
+	}
+
+	today := time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC)
+	yesterday := today.AddDate(0, 0, -1).Format("2006-01-02")
+	dayBefore := today.AddDate(0, 0, -2).Format("2006-01-02")
+	for _, d := range []string{yesterday, dayBefore} {
+		if _, err := store.CreateLogEntry(ctx, userID, LogEntryInput{LogDate: d, FoodID: &rice.ID, Servings: 1}); err != nil {
+			t.Fatalf("CreateLogEntry(%s) failed: %v", d, err)
+		}
+	}
+
+	streak, err := store.LoggingStreak(ctx, userID, today)
+	if err != nil {
+		t.Fatalf("LoggingStreak failed: %v", err)
+	}
+	if streak != 2 {
+		t.Fatalf("expected streak of 2 (today not logged yet shouldn't break it), got %d", streak)
 	}
 }

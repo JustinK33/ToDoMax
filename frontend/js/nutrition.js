@@ -1,5 +1,6 @@
 import { apiFetch } from "./api.js";
 import { escapeHtml } from "./dom-utils.js";
+import { sparkline } from "./sparkline.js";
 
 const listEl = document.getElementById("item-list");
 const emptyEl = document.getElementById("empty-state");
@@ -7,6 +8,7 @@ const modalBackdrop = document.getElementById("modal-backdrop");
 const viewTabs = document.getElementById("view-tabs");
 const heroDateEl = document.getElementById("hero-date");
 const heroStatsEl = document.getElementById("hero-stats");
+const calorieTrendEl = document.getElementById("calorie-trend");
 
 const logForm = document.getElementById("log-form");
 const foodForm = document.getElementById("food-form");
@@ -62,8 +64,10 @@ function renderHero(summary) {
   else if (totals.fat_g) parts.push(`${round1(totals.fat_g)}g fat`);
 
   const hitProtein = t.protein_g != null && totals.protein_g >= t.protein_g;
-  const pill = hitProtein ? `<span class="pill pill-accent">Protein goal hit</span>` : "";
-  heroStatsEl.innerHTML = `<span>${parts.join(" · ")}</span>${pill}`;
+  const pills = [];
+  if (hitProtein) pills.push(`<span class="pill pill-accent">Protein goal hit</span>`);
+  if (summary.streak > 0) pills.push(`<span class="pill pill-accent">&#128293; ${summary.streak}d streak</span>`);
+  heroStatsEl.innerHTML = `<span>${parts.join(" · ")}</span>${pills.join("")}`;
 }
 
 function entryRow(e) {
@@ -88,6 +92,10 @@ async function loadToday() {
   emptyEl.classList.toggle("hidden", entries.length > 0);
   listEl.innerHTML = "";
   for (const e of entries) listEl.appendChild(entryRow(e));
+
+  const history = await apiFetch("/api/nutrition/history?days=14");
+  calorieTrendEl.innerHTML = sparkline(history.map((h) => ({ date: h.log_date, value: h.calories })));
+  calorieTrendEl.classList.remove("hidden");
 }
 
 // --- Foods view ---
@@ -107,6 +115,7 @@ function foodRow(f) {
 }
 
 async function loadFoods() {
+  calorieTrendEl.classList.add("hidden");
   currentFoods = await apiFetch("/api/foods");
   emptyEl.textContent = "No foods yet. Tap + to create one.";
   emptyEl.classList.toggle("hidden", currentFoods.length > 0);
@@ -131,6 +140,7 @@ function mealRow(m) {
 }
 
 async function loadMeals() {
+  calorieTrendEl.classList.add("hidden");
   currentMeals = await apiFetch("/api/meals");
   emptyEl.textContent = "No meals yet. Tap + to combine some foods into one.";
   emptyEl.classList.toggle("hidden", currentMeals.length > 0);

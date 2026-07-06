@@ -16,6 +16,7 @@ import (
 	"github.com/justin/todomax/backend/internal/reminder"
 	"github.com/justin/todomax/backend/internal/task"
 	"github.com/justin/todomax/backend/internal/training"
+	"github.com/justin/todomax/backend/internal/wellness"
 )
 
 type Server struct {
@@ -26,6 +27,7 @@ type Server struct {
 	goals     *goal.Store
 	nutrition *nutrition.Store
 	training  *training.Store
+	wellness  *wellness.Store
 	stop      context.CancelFunc
 }
 
@@ -52,6 +54,7 @@ func New() (*Server, error) {
 	goals := goal.NewStore(db)
 	nutritionStore := nutrition.NewStore(db)
 	trainingStore := training.NewStore(db)
+	wellnessStore := wellness.NewStore(db)
 
 	if db != nil {
 		reminderRunner := reminder.New(tasks, reminder.Config{
@@ -62,7 +65,7 @@ func New() (*Server, error) {
 		go reminderRunner.Run(ctx)
 	}
 
-	return &Server{cfg: cfg, db: db, authKeys: authKeys, tasks: tasks, goals: goals, nutrition: nutritionStore, training: trainingStore, stop: cancel}, nil
+	return &Server{cfg: cfg, db: db, authKeys: authKeys, tasks: tasks, goals: goals, nutrition: nutritionStore, training: trainingStore, wellness: wellnessStore, stop: cancel}, nil
 }
 
 func (s *Server) Close() {
@@ -86,6 +89,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/tasks/{id}/complete", requireAuth(http.HandlerFunc(s.handleCompleteTask)))
 	mux.Handle("POST /api/tasks/{id}/uncomplete", requireAuth(http.HandlerFunc(s.handleUncompleteTask)))
 	mux.Handle("GET /api/summary/week", requireAuth(http.HandlerFunc(s.handleWeekSummary)))
+	mux.Handle("GET /api/tasks/habits", requireAuth(http.HandlerFunc(s.handleListHabits)))
 
 	mux.Handle("POST /api/goals", requireAuth(http.HandlerFunc(s.handleCreateGoal)))
 	mux.Handle("GET /api/goals", requireAuth(http.HandlerFunc(s.handleListGoals)))
@@ -111,6 +115,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("PUT /api/nutrition/log/{id}", requireAuth(http.HandlerFunc(s.handleUpdateLogEntry)))
 	mux.Handle("DELETE /api/nutrition/log/{id}", requireAuth(http.HandlerFunc(s.handleDeleteLogEntry)))
 	mux.Handle("GET /api/nutrition/day", requireAuth(http.HandlerFunc(s.handleDaySummary)))
+	mux.Handle("GET /api/nutrition/history", requireAuth(http.HandlerFunc(s.handleNutritionHistory)))
 	mux.Handle("GET /api/nutrition/target", requireAuth(http.HandlerFunc(s.handleGetTarget)))
 	mux.Handle("PUT /api/nutrition/target", requireAuth(http.HandlerFunc(s.handleSetTarget)))
 
@@ -127,6 +132,25 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("PUT /api/workout-templates/{id}", requireAuth(http.HandlerFunc(s.handleUpdateTemplate)))
 	mux.Handle("DELETE /api/workout-templates/{id}", requireAuth(http.HandlerFunc(s.handleDeleteTemplate)))
 	mux.Handle("GET /api/training/summary", requireAuth(http.HandlerFunc(s.handleTrainingSummary)))
+	mux.Handle("GET /api/training/history", requireAuth(http.HandlerFunc(s.handleTrainingHistory)))
+
+	mux.Handle("POST /api/wellness/body-metrics", requireAuth(http.HandlerFunc(s.handleCreateBodyMetric)))
+	mux.Handle("GET /api/wellness/body-metrics", requireAuth(http.HandlerFunc(s.handleListBodyMetrics)))
+	mux.Handle("GET /api/wellness/body-metrics/{id}", requireAuth(http.HandlerFunc(s.handleGetBodyMetric)))
+	mux.Handle("PUT /api/wellness/body-metrics/{id}", requireAuth(http.HandlerFunc(s.handleUpdateBodyMetric)))
+	mux.Handle("DELETE /api/wellness/body-metrics/{id}", requireAuth(http.HandlerFunc(s.handleDeleteBodyMetric)))
+
+	mux.Handle("POST /api/wellness/sleep", requireAuth(http.HandlerFunc(s.handleCreateSleepLog)))
+	mux.Handle("GET /api/wellness/sleep", requireAuth(http.HandlerFunc(s.handleListSleepLogs)))
+	mux.Handle("GET /api/wellness/sleep/{id}", requireAuth(http.HandlerFunc(s.handleGetSleepLog)))
+	mux.Handle("PUT /api/wellness/sleep/{id}", requireAuth(http.HandlerFunc(s.handleUpdateSleepLog)))
+	mux.Handle("DELETE /api/wellness/sleep/{id}", requireAuth(http.HandlerFunc(s.handleDeleteSleepLog)))
+
+	mux.Handle("POST /api/wellness/mood", requireAuth(http.HandlerFunc(s.handleCreateMoodLog)))
+	mux.Handle("GET /api/wellness/mood", requireAuth(http.HandlerFunc(s.handleListMoodLogs)))
+	mux.Handle("GET /api/wellness/mood/{id}", requireAuth(http.HandlerFunc(s.handleGetMoodLog)))
+	mux.Handle("PUT /api/wellness/mood/{id}", requireAuth(http.HandlerFunc(s.handleUpdateMoodLog)))
+	mux.Handle("DELETE /api/wellness/mood/{id}", requireAuth(http.HandlerFunc(s.handleDeleteMoodLog)))
 
 	return s.cors(mux)
 }

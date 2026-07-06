@@ -539,6 +539,75 @@ func TestWeekSummary(t *testing.T) {
 // by_category unconditionally - `null.map()` throws, which aborted the
 // summary render silently (the DOM update line never ran) before this was
 // fixed to always initialize ByCategory to an empty slice.
+func TestHabitStreakSkipsNonScheduledDays(t *testing.T) {
+	store, userID := newTestStore(t)
+	ctx := context.Background()
+
+	now := time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)
+	for now.Weekday() != time.Friday {
+		now = now.AddDate(0, 0, 1)
+	}
+	monday := mondayOf(now)
+	mondayStr := monday.Format("2006-01-02")
+	wednesdayStr := monday.AddDate(0, 0, 2).Format("2006-01-02")
+	fridayStr := now.Format("2006-01-02") // this week's Friday = today
+
+	habit, err := store.Create(ctx, userID, Input{Title: "Mon/Wed/Fri run", RecurrenceType: "weekly", RecurrenceDays: []int{1, 3, 5}})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	for _, d := range []string{mondayStr, wednesdayStr, fridayStr} {
+		if _, err := store.SetOccurrenceCompleted(ctx, userID, habit.ID, d, true); err != nil {
+			t.Fatalf("SetOccurrenceCompleted(%s) failed: %v", d, err)
+		}
+	}
+
+	habits, err := store.Habits(ctx, userID, now)
+	if err != nil {
+		t.Fatalf("Habits failed: %v", err)
+	}
+	if len(habits) != 1 {
+		t.Fatalf("expected 1 habit, got %+v", habits)
+	}
+	if !habits[0].CompletedToday {
+		t.Fatalf("expected today (Friday) to be completed: %+v", habits[0])
+	}
+	if habits[0].Streak != 3 {
+		t.Fatalf("expected streak of 3 (Mon/Wed/Fri), got %d: %+v", habits[0].Streak, habits[0])
+	}
+}
+
+func TestHabitStreakNotBrokenByIncompleteToday(t *testing.T) {
+	store, userID := newTestStore(t)
+	ctx := context.Background()
+
+	now := time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)
+	yesterday := now.AddDate(0, 0, -1).Format("2006-01-02")
+
+	habit, err := store.Create(ctx, userID, Input{Title: "daily journal", RecurrenceType: "daily"})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if _, err := store.SetOccurrenceCompleted(ctx, userID, habit.ID, yesterday, true); err != nil {
+		t.Fatalf("SetOccurrenceCompleted failed: %v", err)
+	}
+
+	habits, err := store.Habits(ctx, userID, now)
+	if err != nil {
+		t.Fatalf("Habits failed: %v", err)
+	}
+	if len(habits) != 1 {
+		t.Fatalf("expected 1 habit, got %+v", habits)
+	}
+	if habits[0].CompletedToday {
+		t.Fatalf("expected today not completed: %+v", habits[0])
+	}
+	if habits[0].Streak != 1 {
+		t.Fatalf("expected streak of 1 from yesterday, not broken by today being incomplete, got %d: %+v", habits[0].Streak, habits[0])
+	}
+}
+
 func TestWeekSummaryEmptyByCategoryIsNotNil(t *testing.T) {
 	store, userID := newTestStore(t)
 	ctx := context.Background()

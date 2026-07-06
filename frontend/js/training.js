@@ -1,5 +1,6 @@
 import { apiFetch } from "./api.js";
 import { escapeHtml } from "./dom-utils.js";
+import { sparkline } from "./sparkline.js";
 
 const listEl = document.getElementById("item-list");
 const emptyEl = document.getElementById("empty-state");
@@ -8,6 +9,7 @@ const viewTabs = document.getElementById("view-tabs");
 const heroDateEl = document.getElementById("hero-date");
 const heroStatsEl = document.getElementById("hero-stats");
 const prListEl = document.getElementById("pr-list");
+const volumeTrendEl = document.getElementById("volume-trend");
 const setForm = document.getElementById("set-form");
 const exerciseForm = document.getElementById("exercise-form");
 const templateForm = document.getElementById("template-form");
@@ -59,8 +61,10 @@ function renderHero(summary) {
     `${summary.week_sets} ${setWord} this week`,
     `${Math.round(summary.week_volume)} lb volume`,
   ];
-  const prPill = summary.prs.length > 0 ? `<span class="pill pill-accent">${summary.prs.length} PR</span>` : "";
-  heroStatsEl.innerHTML = `<span>${parts.join(" &middot; ")}</span>${prPill}`;
+  const pills = [];
+  if (summary.prs.length > 0) pills.push(`<span class="pill pill-accent">${summary.prs.length} PR</span>`);
+  if (summary.streak > 0) pills.push(`<span class="pill pill-accent">&#128293; ${summary.streak}d streak</span>`);
+  heroStatsEl.innerHTML = `<span>${parts.join(" &middot; ")}</span>${pills.join("")}`;
 }
 
 function renderPRs(prs) {
@@ -109,10 +113,15 @@ async function loadToday() {
   emptyEl.classList.toggle("hidden", sets.length > 0);
   listEl.innerHTML = "";
   for (const set of sets) listEl.appendChild(setRow(set));
+
+  const history = await apiFetch("/api/training/history?days=14");
+  volumeTrendEl.innerHTML = sparkline(history.map((h) => ({ date: h.performed_on, value: h.volume })));
+  volumeTrendEl.classList.remove("hidden");
 }
 
 async function loadExercises() {
   prListEl.classList.add("hidden");
+  volumeTrendEl.classList.add("hidden");
   currentExercises = await apiFetch("/api/exercises");
   emptyEl.textContent = "No exercises yet. Tap + to add bench, squat, deadlift, rows, or anything you track.";
   emptyEl.classList.toggle("hidden", currentExercises.length > 0);
@@ -330,6 +339,7 @@ function templateRow(template) {
 
 async function loadTemplates() {
   prListEl.classList.add("hidden");
+  volumeTrendEl.classList.add("hidden");
   currentTemplates = await apiFetch("/api/workout-templates");
   emptyEl.textContent = "No workouts yet. Tap + to build one, e.g. 'Leg Day A'.";
   emptyEl.classList.toggle("hidden", currentTemplates.length > 0);

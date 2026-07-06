@@ -54,6 +54,7 @@ type Summary struct {
 	WeekSets    int     `json:"week_sets"`
 	WeekVolume  float64 `json:"week_volume"`
 	PRs         []Set   `json:"prs"`
+	Streak      int     `json:"streak"`
 }
 
 type ErrInvalidInput struct{ Reason string }
@@ -329,4 +330,69 @@ func (s *Store) prsForDate(ctx context.Context, userID, performedOn string) ([]S
 		sets = append(sets, set)
 	}
 	return sets, rows.Err()
+}
+
+// LoggingStreak counts consecutive days with at least one set logged,
+// walking back from today. If today has no set yet, it starts the count
+// from yesterday instead - not having logged yet today shouldn't zero out
+// an otherwise-intact streak.
+func (s *Store) LoggingStreak(ctx context.Context, userID string, today time.Time) (int, error) {
+	rows, err := s.db.Query(ctx, `select distinct performed_on from workout_sets where user_id = $1`, userID)
+	if err != nil {
+		return 0, err
+	}
+	logged := map[string]bool{}
+	for rows.Next() {
+		var d time.Time
+		if err := rows.Scan(&d); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		logged[d.Format("2006-01-02")] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	cursor := today
+	if !logged[cursor.Format("2006-01-02")] {
+		cursor = cursor.AddDate(0, 0, -1)
+	}
+	streak := 0
+	for logged[cursor.Format("2006-01-02")] {
+		streak++
+		cursor = cursor.AddDate(0, 0, -1)
+	}
+	return streak, nil
+}
+
+// DayVolume is one day's total set volume, used by VolumeHistory for a
+// trend chart.
+type DayVolume struct {
+	PerformedOn string  `json:"performed_on"`
+	Volume      float64 `json:"volume"`
+	Sets        int     `json:"sets"`
+}
+
+// VolumeHistory returns `days` DayVolumes ending today, ascending by date,
+// zero-filling days with nothing logged. Loops calling ListSets per day
+// rather than a single grouped SQL query, matching nutrition.History's
+// reuse-over-new-SQL approach - fine at this data scale.
+func (s *Store) VolumeHistory(ctx context.Context, userID string, days int, today time.Time) ([]DayVolume, error) {
+	out := make([]DayVolume, days)
+	for i := 0; i < days; i++ {
+		d := today.AddDate(0, 0, -(days - 1 - i))
+		dateStr := d.Format("2006-01-02")
+		sets, err := s.ListSets(ctx, userID, dateStr)
+		if err != nil {
+			return nil, err
+		}
+		dv := DayVolume{PerformedOn: dateStr, Sets: len(sets)}
+		for _, set := range sets {
+			dv.Volume += set.Volume
+		}
+		out[i] = dv
+	}
+	return out, nil
 }

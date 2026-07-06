@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -246,7 +247,36 @@ func (s *Server) handleDaySummary(w http.ResponseWriter, r *http.Request) {
 		writeUnexpectedErr(w, err)
 		return
 	}
+	summary.Streak, err = s.nutrition.LoggingStreak(r.Context(), userID, time.Now().In(s.cfg.Location))
+	if err != nil {
+		writeUnexpectedErr(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, summary)
+}
+
+func (s *Server) handleNutritionHistory(w http.ResponseWriter, r *http.Request) {
+	userID, _ := auth.UserID(r.Context())
+
+	days := 14
+	if v := r.URL.Query().Get("days"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			days = n
+		}
+	}
+	if days < 1 {
+		days = 1
+	}
+	if days > 90 {
+		days = 90
+	}
+
+	history, err := s.nutrition.History(r.Context(), userID, days, time.Now().In(s.cfg.Location))
+	if err != nil {
+		writeUnexpectedErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, history)
 }
 
 // --- Target ---

@@ -47,6 +47,7 @@ type DaySummary struct {
 	Entries []LogEntry `json:"entries"`
 	Totals  Macros     `json:"totals"`
 	Target  Target     `json:"target"`
+	Streak  int        `json:"streak"`
 }
 
 func validateLogEntryInput(in LogEntryInput) error {
@@ -234,4 +235,74 @@ func (s *Store) DaySummary(ctx context.Context, userID, logDate string) (DaySumm
 	}
 
 	return DaySummary{LogDate: logDate, Entries: entries, Totals: totals, Target: target}, nil
+}
+
+// LoggingStreak counts consecutive days with at least one log entry,
+// walking back from today. If today has no entry yet, it starts the count
+// from yesterday instead - not having logged yet today shouldn't zero out
+// an otherwise-intact streak.
+func (s *Store) LoggingStreak(ctx context.Context, userID string, today time.Time) (int, error) {
+	rows, err := s.db.Query(ctx, `select distinct log_date from food_log_entries where user_id = $1`, userID)
+	if err != nil {
+		return 0, err
+	}
+	logged := map[string]bool{}
+	for rows.Next() {
+		var d time.Time
+		if err := rows.Scan(&d); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		logged[d.Format("2006-01-02")] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	cursor := today
+	if !logged[cursor.Format("2006-01-02")] {
+		cursor = cursor.AddDate(0, 0, -1)
+	}
+	streak := 0
+	for logged[cursor.Format("2006-01-02")] {
+		streak++
+		cursor = cursor.AddDate(0, 0, -1)
+	}
+	return streak, nil
+}
+
+// DayTotal is one day's macro totals, used by History for a trend chart.
+type DayTotal struct {
+	LogDate  string  `json:"log_date"`
+	Calories float64 `json:"calories"`
+	ProteinG float64 `json:"protein_g"`
+	CarbsG   float64 `json:"carbs_g"`
+	FatG     float64 `json:"fat_g"`
+}
+
+// History returns `days` DayTotals ending today, ascending by date, zero-
+// filling days with nothing logged. Loops calling logEntriesForDate per day
+// rather than a single grouped SQL query, reusing the same macro resolution
+// used by DaySummary - fine at this data scale (days is capped by the
+// caller).
+func (s *Store) History(ctx context.Context, userID string, days int, today time.Time) ([]DayTotal, error) {
+	out := make([]DayTotal, days)
+	for i := 0; i < days; i++ {
+		d := today.AddDate(0, 0, -(days - 1 - i))
+		dateStr := d.Format("2006-01-02")
+		entries, err := s.logEntriesForDate(ctx, userID, dateStr, "")
+		if err != nil {
+			return nil, err
+		}
+		total := DayTotal{LogDate: dateStr}
+		for _, e := range entries {
+			total.Calories += e.Calories
+			total.ProteinG += e.ProteinG
+			total.CarbsG += e.CarbsG
+			total.FatG += e.FatG
+		}
+		out[i] = total
+	}
+	return out, nil
 }
