@@ -337,6 +337,21 @@ main {
   color: #0b0b0d;
 }
 
+#delete-exercise.confirm,
+#delete-food.confirm,
+#delete-meal.confirm {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #0b0b0d;
+}
+
+.pr-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
 .weekday-picker {
   display: flex;
   flex-wrap: wrap;

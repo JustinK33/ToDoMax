@@ -15,6 +15,7 @@ import (
 	"github.com/justin/todomax/backend/internal/nutrition"
 	"github.com/justin/todomax/backend/internal/reminder"
 	"github.com/justin/todomax/backend/internal/task"
+	"github.com/justin/todomax/backend/internal/training"
 )
 
 type Server struct {
@@ -24,6 +25,7 @@ type Server struct {
 	tasks     *task.Store
 	goals     *goal.Store
 	nutrition *nutrition.Store
+	training  *training.Store
 	stop      context.CancelFunc
 }
 
@@ -49,6 +51,7 @@ func New() (*Server, error) {
 	tasks := task.NewStore(db)
 	goals := goal.NewStore(db)
 	nutritionStore := nutrition.NewStore(db)
+	trainingStore := training.NewStore(db)
 
 	if db != nil {
 		reminderRunner := reminder.New(tasks, reminder.Config{
@@ -59,7 +62,7 @@ func New() (*Server, error) {
 		go reminderRunner.Run(ctx)
 	}
 
-	return &Server{cfg: cfg, db: db, authKeys: authKeys, tasks: tasks, goals: goals, nutrition: nutritionStore, stop: cancel}, nil
+	return &Server{cfg: cfg, db: db, authKeys: authKeys, tasks: tasks, goals: goals, nutrition: nutritionStore, training: trainingStore, stop: cancel}, nil
 }
 
 func (s *Server) Close() {
@@ -109,6 +112,15 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/nutrition/day", requireAuth(http.HandlerFunc(s.handleDaySummary)))
 	mux.Handle("GET /api/nutrition/target", requireAuth(http.HandlerFunc(s.handleGetTarget)))
 	mux.Handle("PUT /api/nutrition/target", requireAuth(http.HandlerFunc(s.handleSetTarget)))
+
+	mux.Handle("POST /api/exercises", requireAuth(http.HandlerFunc(s.handleCreateExercise)))
+	mux.Handle("GET /api/exercises", requireAuth(http.HandlerFunc(s.handleListExercises)))
+	mux.Handle("GET /api/exercises/{id}", requireAuth(http.HandlerFunc(s.handleGetExercise)))
+	mux.Handle("PUT /api/exercises/{id}", requireAuth(http.HandlerFunc(s.handleUpdateExercise)))
+	mux.Handle("DELETE /api/exercises/{id}", requireAuth(http.HandlerFunc(s.handleDeleteExercise)))
+	mux.Handle("POST /api/workout-sets", requireAuth(http.HandlerFunc(s.handleCreateWorkoutSet)))
+	mux.Handle("DELETE /api/workout-sets/{id}", requireAuth(http.HandlerFunc(s.handleDeleteWorkoutSet)))
+	mux.Handle("GET /api/training/summary", requireAuth(http.HandlerFunc(s.handleTrainingSummary)))
 
 	return s.cors(mux)
 }
