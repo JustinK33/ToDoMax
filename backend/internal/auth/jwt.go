@@ -1,3 +1,7 @@
+// Package auth verifies Supabase-issued JWTs. It fetches Supabase's JWKS
+// once, then provides HTTP middleware that rejects requests without a valid
+// bearer token and stashes the caller's user ID in the request context for
+// handlers to read via UserID.
 package auth
 
 import (

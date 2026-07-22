@@ -1,7 +1,24 @@
 # ToDoMax
 
-A small, dark-themed personal todo/habit tracker.
-Go backend, Supabase Postgres + Auth, static frontend for Vercel.
+A dark-themed personal tracker that grew from a todo list into a small
+health-and-productivity dashboard: tasks, goals, nutrition, training, and
+daily wellness logs, all under one login.
+
+Built to stay boring on purpose - a single Go binary, plain HTML/CSS/JS with
+no build step, and Supabase for the database and auth. No framework churn, no
+webpack config, nothing to babysit.
+
+## Features
+
+- **Tasks** - one-off and recurring todos (daily or specific weekdays) with
+  per-day completion and optional email reminders.
+- **Goals** - personal goals bucketed by timeframe (week/month/year/lifetime).
+- **Nutrition** - reusable foods and meals, a daily log, and calorie/macro
+  targets to compare against.
+- **Training** - exercises, logged sets, and workout templates for
+  progressive overload.
+- **Wellness** - daily body-weight, sleep, and mood logs.
+- **Dashboard** - streaks and trend sparklines across the above.
 
 ## Stack
 
@@ -9,6 +26,20 @@ Go backend, Supabase Postgres + Auth, static frontend for Vercel.
 - Database/Auth: Supabase Postgres + Supabase Auth.
 - Frontend: plain HTML/CSS/JS, no build step, Supabase JS client via ESM CDN.
 - Reminders: an in-process ticker + Resend email.
+
+## Design notes
+
+- **One binary, one process.** The backend is stdlib `net/http` with `pgx`
+  for Postgres - no web framework, no ORM. Routes are grouped by feature and
+  sit behind Supabase JWT verification and CORS.
+- **No build step on the frontend.** Static files served as-is; the Supabase
+  client loads from a CDN via ESM. Deploys to Vercel with an empty build
+  command.
+- **Reminders live in-process.** A ticker goroutine checks due tasks every
+  minute and emails via Resend's REST API. That's why the Fly deploy keeps a
+  machine running instead of scaling to zero (see below).
+- **Tested against real Postgres.** `go test ./...` runs on every push
+  against a Postgres service container, not mocks.
 
 ## Local development
 
