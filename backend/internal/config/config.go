@@ -1,3 +1,6 @@
+// Package config loads all runtime settings from environment variables.
+// FRONTEND_ORIGINS is a comma-separated list; TZ falls back to UTC if unset
+// or unparseable. Everything else is taken verbatim, empty if not provided.
 package config
 
 import (

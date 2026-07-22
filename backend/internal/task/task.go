@@ -1,3 +1,7 @@
+// Package task is the core todo/habit store: one-off and recurring tasks,
+// their per-day occurrences, and the completion state for each. Recurrence is
+// kept small (daily, or specific weekdays) rather than a full calendar-style
+// rule engine.
 package task
 
 import (

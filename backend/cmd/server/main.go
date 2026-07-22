@@ -1,3 +1,5 @@
+// Command server is the ToDoMax HTTP API. It boots the server, listens on
+// $PORT (default 8080), and shuts down gracefully on SIGINT/SIGTERM.
 package main
 
 import (

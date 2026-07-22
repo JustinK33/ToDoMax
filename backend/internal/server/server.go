@@ -1,3 +1,7 @@
+// Package server wires everything together: it opens the database pool,
+// starts the reminder ticker, and exposes the HTTP API. Routes are grouped by
+// feature across the other files here (tasks, goals, nutrition, training,
+// wellness), all sitting behind Supabase JWT auth and CORS.
 package server
 
 import (
